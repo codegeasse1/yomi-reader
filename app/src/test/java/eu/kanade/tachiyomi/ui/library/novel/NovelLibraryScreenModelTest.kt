@@ -1,0 +1,768 @@
+package eu.kanade.tachiyomi.ui.library.novel
+
+import android.content.Context
+import eu.kanade.domain.base.BasePreferences
+import eu.kanade.domain.entries.novel.interactor.UpdateNovel
+import eu.kanade.presentation.components.SEARCH_DEBOUNCE_MILLIS
+import eu.kanade.presentation.library.novel.NovelLibraryItem
+import eu.kanade.tachiyomi.data.download.novel.NovelDownloadCache
+import eu.kanade.tachiyomi.data.track.TrackerManager
+import eu.kanade.tachiyomi.source.model.SManga
+import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.shouldBe
+import io.mockk.coEvery
+import io.mockk.coJustRun
+import io.mockk.every
+import io.mockk.mockk
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestCoroutineScheduler
+import kotlinx.coroutines.test.TestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import tachiyomi.core.common.preference.Preference
+import tachiyomi.core.common.preference.PreferenceStore
+import tachiyomi.domain.category.novel.interactor.GetNovelCategories
+import tachiyomi.domain.category.novel.interactor.GetVisibleNovelCategories
+import tachiyomi.domain.category.novel.interactor.SetNovelCategories
+import tachiyomi.domain.category.novel.model.NovelCategory
+import tachiyomi.domain.entries.novel.interactor.GetLibraryNovel
+import tachiyomi.domain.entries.novel.model.Novel
+import tachiyomi.domain.items.novelchapter.model.NovelChapter
+import tachiyomi.domain.items.novelchapter.repository.NovelChapterRepository
+import tachiyomi.domain.library.novel.LibraryNovel
+import tachiyomi.domain.library.novel.model.NovelLibrarySort
+import tachiyomi.domain.library.service.LibraryPreferences
+import tachiyomi.domain.series.novel.interactor.AddNovelsToSeries
+import tachiyomi.domain.series.novel.interactor.CreateNovelSeries
+import tachiyomi.domain.series.novel.interactor.DeleteNovelSeries
+import tachiyomi.domain.series.novel.interactor.GetLibraryNovelSeries
+import tachiyomi.domain.series.novel.interactor.GetNovelIdsInAnySeries
+import tachiyomi.domain.series.novel.interactor.UpdateNovelSeries
+import tachiyomi.domain.source.novel.service.NovelSourceManager
+import tachiyomi.domain.track.novel.interactor.GetTracksPerNovel
+import tachiyomi.domain.track.novel.model.NovelTrack
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.fullType
+import uy.kohesive.injekt.api.get
+
+class NovelLibraryScreenModelTest {
+
+    private lateinit var getLibraryNovel: GetLibraryNovel
+    private lateinit var chapterRepository: NovelChapterRepository
+    private lateinit var libraryFlow: MutableStateFlow<List<LibraryNovel>>
+    private val activeScreenModels = mutableListOf<NovelLibraryScreenModel>()
+    private lateinit var testDispatcher: TestDispatcher
+    private lateinit var basePreferences: BasePreferences
+    private lateinit var libraryPreferences: LibraryPreferences
+    private lateinit var getNovelCategories: GetNovelCategories
+    private lateinit var setNovelCategories: SetNovelCategories
+    private lateinit var updateNovel: UpdateNovel
+    private lateinit var createNovelSeries: CreateNovelSeries
+    private lateinit var addNovelsToSeries: AddNovelsToSeries
+    private lateinit var deleteNovelSeries: DeleteNovelSeries
+    private lateinit var updateNovelSeries: UpdateNovelSeries
+    private lateinit var getLibraryNovelSeries: GetLibraryNovelSeries
+    private lateinit var getNovelIdsInAnySeries: GetNovelIdsInAnySeries
+    private lateinit var downloadCache: NovelDownloadCache
+    private lateinit var downloadedIdsFlow: MutableStateFlow<Set<Long>>
+    private lateinit var sourceManager: NovelSourceManager
+    private lateinit var getVisibleNovelCategories: GetVisibleNovelCategories
+    private lateinit var getTracksPerNovel: GetTracksPerNovel
+    private lateinit var trackerManager: TrackerManager
+
+    @BeforeEach
+    fun setup() {
+        testDispatcher = StandardTestDispatcher()
+        Dispatchers.setMain(testDispatcher)
+        getLibraryNovel = mockk()
+        chapterRepository = mockk()
+        libraryFlow = MutableStateFlow(emptyList())
+        every { getLibraryNovel.subscribe() } returns libraryFlow
+        coEvery { chapterRepository.getChapterByNovelId(any(), any()) } returns emptyList()
+        getNovelCategories = mockk()
+        setNovelCategories = mockk()
+        updateNovel = mockk()
+        createNovelSeries = mockk()
+        addNovelsToSeries = mockk()
+        deleteNovelSeries = mockk()
+        updateNovelSeries = mockk(relaxed = true)
+        getLibraryNovelSeries = mockk()
+        getNovelIdsInAnySeries = mockk()
+        downloadCache = mockk(relaxed = true)
+        downloadedIdsFlow = MutableStateFlow(emptySet())
+        every { downloadCache.downloadedIds } returns downloadedIdsFlow
+        sourceManager = mockk(relaxed = true)
+        runCatching { Injekt.get<NovelSourceManager>() }
+            .getOrElse {
+                Injekt.addSingleton(fullType<NovelSourceManager>(), sourceManager)
+            }
+        getVisibleNovelCategories = mockk()
+        getTracksPerNovel = mockk()
+        trackerManager = mockk(relaxed = true)
+        every { getVisibleNovelCategories.subscribe() } returns MutableStateFlow(
+            listOf(NovelCategory.createDefault(0L)),
+        )
+        every { getTracksPerNovel.subscribe() } returns MutableStateFlow(emptyMap<Long, List<NovelTrack>>())
+        coEvery { getNovelCategories.await(any<Long>()) } returns emptyList()
+        coEvery { getNovelCategories.await() } returns emptyList<NovelCategory>()
+        coJustRun { setNovelCategories.await(any(), any()) }
+        coEvery { updateNovel.await(any()) } returns true
+        coEvery { updateNovel.awaitAll(any()) } returns true
+        every { getLibraryNovelSeries.subscribe() } returns MutableStateFlow(emptyList())
+        every { getNovelIdsInAnySeries.subscribe() } returns MutableStateFlow(emptySet())
+        val preferenceStore = FakePreferenceStore()
+        basePreferences = BasePreferences(
+            context = mockk<Context>(relaxed = true),
+            preferenceStore = preferenceStore,
+        )
+        libraryPreferences = LibraryPreferences(preferenceStore)
+    }
+
+    @AfterEach
+    fun tearDown() {
+        activeScreenModels.forEach { it.onDispose() }
+        testDispatcher.scheduler.advanceUntilIdle()
+        activeScreenModels.clear()
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `filters library novels by search query`() = runTest(testDispatcher) {
+        val first = libraryNovel(id = 1L, title = "First Novel")
+        val second = libraryNovel(id = 2L, title = "Second Story")
+        libraryFlow.value = listOf(first, second)
+
+        val screenModel = trackedNovelLibraryScreenModel(
+            getLibraryNovel = getLibraryNovel,
+            chapterRepository = chapterRepository,
+            basePreferences = basePreferences,
+            libraryPreferences = libraryPreferences,
+            hasDownloadedChapters = { false },
+            downloadedIdsDispatcher = testDispatcher,
+        )
+
+        testDispatcher.scheduler.advanceUntilIdle()
+        screenModel.search("Second")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        screenModel.state.value.items.shouldContainExactly(libraryNovelItem(id = 2L, title = "Second Story"))
+    }
+
+    @Test
+    fun `search waits for debounce before filtering items`() = runTest(testDispatcher) {
+        val first = libraryNovel(id = 1L, title = "First Novel")
+        val second = libraryNovel(id = 2L, title = "Second Story")
+        libraryFlow.value = listOf(first, second)
+
+        val downloadCacheChanges = MutableSharedFlow<Unit>(replay = 1).also { it.tryEmit(Unit) }
+        val screenModel = trackedNovelLibraryScreenModel(
+            getLibraryNovel = getLibraryNovel,
+            chapterRepository = chapterRepository,
+            basePreferences = basePreferences,
+            libraryPreferences = libraryPreferences,
+            hasDownloadedChapters = { false },
+            downloadedIdsDispatcher = testDispatcher,
+            downloadCacheChanges = downloadCacheChanges,
+            searchDebounceMillis = SEARCH_DEBOUNCE_MILLIS,
+        )
+
+        testDispatcher.scheduler.advanceUntilIdle()
+        screenModel.search("Second")
+        advanceTimeBy(SEARCH_DEBOUNCE_MILLIS - 1)
+
+        screenModel.state.value.items.shouldContainExactly(
+            libraryNovelItem(id = 1L, title = "First Novel"),
+            libraryNovelItem(id = 2L, title = "Second Story"),
+        )
+
+        advanceTimeBy(1)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        screenModel.state.value.items.shouldContainExactly(libraryNovelItem(id = 2L, title = "Second Story"))
+    }
+
+    @Test
+    fun `unread filter keeps only unread entries`() = runTest(testDispatcher) {
+        val unread = libraryNovel(id = 1L, title = "Unread", total = 10L, read = 1L)
+        val read = libraryNovel(id = 2L, title = "Read", total = 10L, read = 10L)
+        libraryFlow.value = listOf(unread, read)
+
+        val screenModel = trackedNovelLibraryScreenModel(
+            getLibraryNovel = getLibraryNovel,
+            chapterRepository = chapterRepository,
+            basePreferences = basePreferences,
+            libraryPreferences = libraryPreferences,
+            hasDownloadedChapters = { false },
+            downloadedIdsDispatcher = testDispatcher,
+        )
+
+        testDispatcher.scheduler.advanceUntilIdle()
+        screenModel.toggleUnreadFilter()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        screenModel.state.value.items.shouldContainExactly(libraryNovelItem(id = 1L, title = "Unread"))
+        screenModel.state.value.hasActiveFilters shouldBe true
+    }
+
+    @Test
+    fun `language filter keeps only entries from selected source languages`() = runTest(testDispatcher) {
+        val english = libraryNovel(id = 1L, title = "English Novel", source = 1L)
+        val japanese = libraryNovel(id = 2L, title = "Japanese Novel", source = 2L)
+        libraryFlow.value = listOf(english, japanese)
+        every { sourceManager.getOrStub(1L).lang } returns "en"
+        every { sourceManager.getOrStub(2L).lang } returns "ja"
+
+        val screenModel = trackedNovelLibraryScreenModel(
+            getLibraryNovel = getLibraryNovel,
+            chapterRepository = chapterRepository,
+            basePreferences = basePreferences,
+            libraryPreferences = libraryPreferences,
+            hasDownloadedChapters = { false },
+            downloadedIdsDispatcher = testDispatcher,
+        )
+
+        testDispatcher.scheduler.advanceUntilIdle()
+        screenModel.toggleLanguage("ja")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        screenModel.state.value.items.shouldContainExactly(
+            libraryNovelItem(id = 2L, title = "Japanese Novel", source = 2L),
+        )
+        screenModel.state.value.hasActiveFilters shouldBe true
+    }
+
+    @Test
+    fun `clearing language filter shows all entries again`() = runTest(testDispatcher) {
+        val english = libraryNovel(id = 1L, title = "English Novel", source = 1L)
+        val japanese = libraryNovel(id = 2L, title = "Japanese Novel", source = 2L)
+        libraryFlow.value = listOf(english, japanese)
+        every { sourceManager.getOrStub(1L).lang } returns "en"
+        every { sourceManager.getOrStub(2L).lang } returns "ja"
+
+        val screenModel = trackedNovelLibraryScreenModel(
+            getLibraryNovel = getLibraryNovel,
+            chapterRepository = chapterRepository,
+            basePreferences = basePreferences,
+            libraryPreferences = libraryPreferences,
+            hasDownloadedChapters = { false },
+            downloadedIdsDispatcher = testDispatcher,
+        )
+
+        testDispatcher.scheduler.advanceUntilIdle()
+        screenModel.toggleLanguage("ja")
+        testDispatcher.scheduler.advanceUntilIdle()
+        screenModel.clearLanguageFilter()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        screenModel.state.value.items.shouldContainExactly(
+            libraryNovelItem(id = 1L, title = "English Novel"),
+            libraryNovelItem(id = 2L, title = "Japanese Novel", source = 2L),
+        )
+        screenModel.state.value.hasActiveFilters shouldBe false
+    }
+
+    @Test
+    fun `library languages lists distinct sorted source languages`() = runTest(testDispatcher) {
+        val a = libraryNovel(id = 1L, title = "A", source = 1L)
+        val b = libraryNovel(id = 2L, title = "B", source = 2L)
+        val c = libraryNovel(id = 3L, title = "C", source = 1L)
+        libraryFlow.value = listOf(a, b, c)
+        every { sourceManager.getOrStub(1L).lang } returns "en"
+        every { sourceManager.getOrStub(2L).lang } returns "ja"
+
+        val screenModel = trackedNovelLibraryScreenModel(
+            getLibraryNovel = getLibraryNovel,
+            chapterRepository = chapterRepository,
+            basePreferences = basePreferences,
+            libraryPreferences = libraryPreferences,
+            hasDownloadedChapters = { false },
+            downloadedIdsDispatcher = testDispatcher,
+        )
+
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        screenModel.state.value.libraryLanguages shouldBe listOf("en", "ja")
+    }
+
+    @Test
+    fun `completed filter keeps only completed entries`() = runTest(testDispatcher) {
+        val ongoing = libraryNovel(id = 1L, title = "Ongoing", status = SManga.ONGOING.toLong())
+        val completed = libraryNovel(id = 2L, title = "Completed", status = SManga.COMPLETED.toLong())
+        libraryFlow.value = listOf(ongoing, completed)
+
+        val screenModel = trackedNovelLibraryScreenModel(
+            getLibraryNovel = getLibraryNovel,
+            chapterRepository = chapterRepository,
+            basePreferences = basePreferences,
+            libraryPreferences = libraryPreferences,
+            hasDownloadedChapters = { false },
+            downloadedIdsDispatcher = testDispatcher,
+        )
+
+        testDispatcher.scheduler.advanceUntilIdle()
+        screenModel.toggleCompletedFilter()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        screenModel.state.value.items.shouldContainExactly(NovelLibraryItem.Single(completed))
+    }
+
+    @Test
+    fun `downloaded filter keeps only downloaded entries`() = runTest(testDispatcher) {
+        val downloaded = libraryNovel(id = 1L, title = "Downloaded")
+        val notDownloaded = libraryNovel(id = 2L, title = "Not Downloaded")
+        libraryFlow.value = listOf(downloaded, notDownloaded)
+        downloadedIdsFlow.value = setOf(downloaded.id)
+
+        val screenModel = trackedNovelLibraryScreenModel(
+            getLibraryNovel = getLibraryNovel,
+            chapterRepository = chapterRepository,
+            basePreferences = basePreferences,
+            libraryPreferences = libraryPreferences,
+            hasDownloadedChapters = { it.id == downloaded.id },
+            downloadedIdsDispatcher = testDispatcher,
+        )
+
+        testDispatcher.scheduler.advanceUntilIdle()
+        screenModel.toggleDownloadedFilter()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        screenModel.state.value.items.shouldContainExactly(libraryNovelItem(id = 1L, title = "Downloaded"))
+        screenModel.state.value.hasActiveFilters shouldBe true
+    }
+
+    @Test
+    fun `downloaded filter refreshes when download cache changes`() = runTest(testDispatcher) {
+        val downloaded = libraryNovel(id = 1L, title = "Downloaded")
+        libraryFlow.value = listOf(downloaded)
+        var isDownloaded = false
+        var resolveCount = 0
+        val downloadCacheChanges = MutableSharedFlow<Unit>(replay = 1).also { it.tryEmit(Unit) }
+
+        val screenModel = trackedNovelLibraryScreenModel(
+            getLibraryNovel = getLibraryNovel,
+            chapterRepository = chapterRepository,
+            basePreferences = basePreferences,
+            libraryPreferences = libraryPreferences,
+            hasDownloadedChapters = {
+                resolveCount++
+                isDownloaded
+            },
+            downloadedIdsDispatcher = testDispatcher,
+            downloadCacheChanges = downloadCacheChanges,
+            searchDebounceMillis = 0L,
+        )
+
+        testDispatcher.scheduler.advanceUntilIdle()
+        screenModel.toggleDownloadedFilter()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        screenModel.state.value.items.shouldContainExactly()
+
+        isDownloaded = true
+        downloadedIdsFlow.value = setOf(downloaded.id)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        screenModel.state.value.items.shouldContainExactly(libraryNovelItem(id = 1L, title = "Downloaded"))
+    }
+
+    @Test
+    fun `sort preference reorders entries`() = runTest(testDispatcher) {
+        val older = libraryNovel(id = 1L, title = "Older", lastRead = 10L)
+        val newer = libraryNovel(id = 2L, title = "Newer", lastRead = 50L)
+        libraryFlow.value = listOf(older, newer)
+
+        val screenModel = trackedNovelLibraryScreenModel(
+            getLibraryNovel = getLibraryNovel,
+            chapterRepository = chapterRepository,
+            basePreferences = basePreferences,
+            libraryPreferences = libraryPreferences,
+            hasDownloadedChapters = { false },
+            downloadedIdsDispatcher = testDispatcher,
+        )
+
+        testDispatcher.scheduler.advanceUntilIdle()
+        screenModel.setSort(
+            NovelLibrarySort.Type.LastRead,
+            NovelLibrarySort.Direction.Descending,
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        screenModel.state.value.items.shouldContainExactly(
+            NovelLibraryItem.Single(newer),
+            NovelLibraryItem.Single(older),
+        )
+    }
+
+    @Test
+    fun `library updates do not wait on download dispatcher when downloaded filter is disabled`() = runTest(
+        testDispatcher,
+    ) {
+        val first = libraryNovel(id = 1L, title = "First Novel")
+        val second = libraryNovel(id = 2L, title = "Second Story")
+        libraryFlow.value = listOf(first, second)
+        val blockedDownloadDispatcher = StandardTestDispatcher(TestCoroutineScheduler())
+
+        val screenModel = trackedNovelLibraryScreenModel(
+            getLibraryNovel = getLibraryNovel,
+            chapterRepository = chapterRepository,
+            basePreferences = basePreferences,
+            libraryPreferences = libraryPreferences,
+            hasDownloadedChapters = { false },
+            downloadedIdsDispatcher = blockedDownloadDispatcher,
+        )
+
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        screenModel.state.value.items.shouldContainExactly(
+            libraryNovelItem(id = 1L, title = "First Novel"),
+            libraryNovelItem(id = 2L, title = "Second Story"),
+        )
+    }
+
+    @Test
+    fun `interval custom filter keeps only custom interval entries`() = runTest(testDispatcher) {
+        val custom = libraryNovel(id = 1L, title = "Custom Interval", fetchInterval = -1)
+        val regular = libraryNovel(id = 2L, title = "Regular Interval", fetchInterval = 0)
+        libraryFlow.value = listOf(custom, regular)
+
+        val screenModel = trackedNovelLibraryScreenModel(
+            getLibraryNovel = getLibraryNovel,
+            chapterRepository = chapterRepository,
+            basePreferences = basePreferences,
+            libraryPreferences = libraryPreferences,
+            hasDownloadedChapters = { false },
+            downloadedIdsDispatcher = testDispatcher,
+        )
+
+        testDispatcher.scheduler.advanceUntilIdle()
+        screenModel.toggleIntervalCustomFilter()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        screenModel.state.value.items.shouldContainExactly(NovelLibraryItem.Single(custom))
+        screenModel.state.value.hasActiveFilters shouldBe true
+    }
+
+    @Test
+    fun `next unread follows reader order when source and chapter number order differ`() = runTest(testDispatcher) {
+        val novel = Novel.create().copy(
+            id = 10L,
+            title = "Novel",
+            source = 1L,
+            chapterFlags = Novel.CHAPTER_SORTING_NUMBER or Novel.CHAPTER_SORT_DESC,
+        )
+        coEvery {
+            chapterRepository.getChapterByNovelId(novelId = novel.id, applyScanlatorFilter = true)
+        } returns listOf(
+            novelChapter(
+                id = 101L,
+                novelId = novel.id,
+                sourceOrder = 0L,
+                chapterNumber = 100.0,
+                read = true,
+            ),
+            novelChapter(
+                id = 102L,
+                novelId = novel.id,
+                sourceOrder = 1L,
+                chapterNumber = 1.0,
+                read = false,
+            ),
+            novelChapter(
+                id = 103L,
+                novelId = novel.id,
+                sourceOrder = 2L,
+                chapterNumber = 2.0,
+                read = false,
+            ),
+        )
+
+        val screenModel = trackedNovelLibraryScreenModel(
+            getLibraryNovel = getLibraryNovel,
+            chapterRepository = chapterRepository,
+            basePreferences = basePreferences,
+            libraryPreferences = libraryPreferences,
+            hasDownloadedChapters = { false },
+            downloadedIdsDispatcher = testDispatcher,
+        )
+
+        screenModel.getNextUnreadChapter(novel)?.id shouldBe 101L
+    }
+
+    @Test
+    fun `fully read series resumes the latest chapter in reading order`() = runTest(testDispatcher) {
+        val novel = Novel.create().copy(
+            id = 10L,
+            title = "Novel",
+            source = 1L,
+            chapterFlags = Novel.CHAPTER_SORTING_NUMBER or Novel.CHAPTER_SORT_DESC,
+        )
+        coEvery {
+            chapterRepository.getChapterByNovelId(novelId = novel.id, applyScanlatorFilter = true)
+        } returns listOf(
+            novelChapter(
+                id = 101L,
+                novelId = novel.id,
+                sourceOrder = 0L,
+                chapterNumber = 100.0,
+                read = true,
+            ),
+            novelChapter(
+                id = 102L,
+                novelId = novel.id,
+                sourceOrder = 1L,
+                chapterNumber = 1.0,
+                read = true,
+            ),
+            novelChapter(
+                id = 103L,
+                novelId = novel.id,
+                sourceOrder = 2L,
+                chapterNumber = 2.0,
+                read = true,
+            ),
+        )
+
+        val screenModel = trackedNovelLibraryScreenModel(
+            getLibraryNovel = getLibraryNovel,
+            chapterRepository = chapterRepository,
+            basePreferences = basePreferences,
+            libraryPreferences = libraryPreferences,
+            hasDownloadedChapters = { false },
+            downloadedIdsDispatcher = testDispatcher,
+        )
+
+        screenModel.getNextUnreadChapter(novel)?.id shouldBe 101L
+    }
+
+    @Test
+    fun `resume selection follows chapter number order when chapter numbers are out of order`() = runTest(
+        testDispatcher,
+    ) {
+        val novel = Novel.create().copy(
+            id = 11L,
+            title = "Novel",
+            source = 1L,
+            chapterFlags = Novel.CHAPTER_SORTING_NUMBER or Novel.CHAPTER_SORT_DESC,
+        )
+        coEvery {
+            chapterRepository.getChapterByNovelId(novelId = novel.id, applyScanlatorFilter = true)
+        } returns listOf(
+            novelChapter(
+                id = 201L,
+                novelId = novel.id,
+                sourceOrder = 2L,
+                chapterNumber = 1.0,
+                read = true,
+            ),
+            novelChapter(
+                id = 202L,
+                novelId = novel.id,
+                sourceOrder = 0L,
+                chapterNumber = 10.0,
+                read = true,
+            ),
+            novelChapter(
+                id = 203L,
+                novelId = novel.id,
+                sourceOrder = 1L,
+                chapterNumber = 20.0,
+                read = false,
+            ),
+        )
+
+        val screenModel = trackedNovelLibraryScreenModel(
+            getLibraryNovel = getLibraryNovel,
+            chapterRepository = chapterRepository,
+            basePreferences = basePreferences,
+            libraryPreferences = libraryPreferences,
+            hasDownloadedChapters = { false },
+            downloadedIdsDispatcher = testDispatcher,
+        )
+
+        screenModel.getNextUnreadChapter(novel)?.id shouldBe 203L
+    }
+
+    private fun trackedNovelLibraryScreenModel(
+        getLibraryNovel: GetLibraryNovel,
+        chapterRepository: NovelChapterRepository,
+        basePreferences: BasePreferences,
+        libraryPreferences: LibraryPreferences,
+        hasDownloadedChapters: (Novel) -> Boolean,
+        downloadedIdsDispatcher: CoroutineDispatcher,
+        downloadCacheChanges: Flow<Unit> = MutableStateFlow(Unit),
+        searchDebounceMillis: Long = 0L,
+    ): NovelLibraryScreenModel {
+        return NovelLibraryScreenModel(
+            getLibraryNovel = getLibraryNovel,
+            getLibraryNovelSeries = getLibraryNovelSeries,
+            getNovelIdsInAnySeries = getNovelIdsInAnySeries,
+            getNovelCategories = getNovelCategories,
+            getVisibleNovelCategories = getVisibleNovelCategories,
+            getTracksPerNovel = getTracksPerNovel,
+            setNovelCategories = setNovelCategories,
+            updateNovel = updateNovel,
+            createNovelSeries = createNovelSeries,
+            addNovelsToSeries = addNovelsToSeries,
+            deleteNovelSeries = deleteNovelSeries,
+            updateNovelSeries = updateNovelSeries,
+            chapterRepository = chapterRepository,
+            basePreferences = basePreferences,
+            libraryPreferences = libraryPreferences,
+            sourceManager = sourceManager,
+            downloadCache = downloadCache,
+            searchDebounceMillis = searchDebounceMillis,
+            trackerManager = trackerManager,
+            libraryDispatcher = testDispatcher,
+        ).also(activeScreenModels::add)
+    }
+
+    private fun libraryNovel(
+        id: Long,
+        title: String,
+        total: Long = 10L,
+        read: Long = 1L,
+        status: Long = 0L,
+        lastRead: Long = 0L,
+        fetchInterval: Int = 0,
+        source: Long = 1L,
+    ): LibraryNovel {
+        return LibraryNovel(
+            novel = Novel.create().copy(
+                id = id,
+                title = title,
+                url = "https://example.com/$id",
+                source = source,
+                favorite = true,
+                status = status,
+                fetchInterval = fetchInterval,
+            ),
+            category = 0L,
+            totalChapters = total,
+            readCount = read,
+            bookmarkCount = 0L,
+            latestUpload = 0L,
+            chapterFetchedAt = 0L,
+            lastRead = lastRead,
+        )
+    }
+
+    private fun libraryNovelItem(
+        id: Long,
+        title: String,
+        total: Long = 10L,
+        read: Long = 1L,
+        status: Long = 0L,
+        lastRead: Long = 0L,
+        fetchInterval: Int = 0,
+        source: Long = 1L,
+    ): NovelLibraryItem.Single {
+        return NovelLibraryItem.Single(
+            libraryNovel(
+                id = id,
+                title = title,
+                total = total,
+                read = read,
+                status = status,
+                lastRead = lastRead,
+                fetchInterval = fetchInterval,
+                source = source,
+            ),
+        )
+    }
+
+    private fun novelChapter(
+        id: Long,
+        novelId: Long,
+        sourceOrder: Long,
+        chapterNumber: Double,
+        read: Boolean,
+    ): NovelChapter {
+        return NovelChapter.create().copy(
+            id = id,
+            novelId = novelId,
+            sourceOrder = sourceOrder,
+            chapterNumber = chapterNumber,
+            read = read,
+            url = "https://example.com/chapter/$id",
+            name = "Chapter $id",
+        )
+    }
+
+    private class FakePreferenceStore : PreferenceStore {
+        private val strings = mutableMapOf<String, Preference<String>>()
+        private val longs = mutableMapOf<String, Preference<Long>>()
+        private val ints = mutableMapOf<String, Preference<Int>>()
+        private val floats = mutableMapOf<String, Preference<Float>>()
+        private val booleans = mutableMapOf<String, Preference<Boolean>>()
+        private val stringSets = mutableMapOf<String, Preference<Set<String>>>()
+        private val objects = mutableMapOf<String, Preference<Any>>()
+
+        override fun getString(key: String, defaultValue: String): Preference<String> =
+            strings.getOrPut(key) { FakePreference(key, defaultValue) }
+
+        override fun getLong(key: String, defaultValue: Long): Preference<Long> =
+            longs.getOrPut(key) { FakePreference(key, defaultValue) }
+
+        override fun getInt(key: String, defaultValue: Int): Preference<Int> =
+            ints.getOrPut(key) { FakePreference(key, defaultValue) }
+
+        override fun getFloat(key: String, defaultValue: Float): Preference<Float> =
+            floats.getOrPut(key) { FakePreference(key, defaultValue) }
+
+        override fun getBoolean(key: String, defaultValue: Boolean): Preference<Boolean> =
+            booleans.getOrPut(key) { FakePreference(key, defaultValue) }
+
+        override fun getStringSet(key: String, defaultValue: Set<String>): Preference<Set<String>> =
+            stringSets.getOrPut(key) { FakePreference(key, defaultValue) }
+
+        @Suppress("UNCHECKED_CAST")
+        override fun <T> getObject(
+            key: String,
+            defaultValue: T,
+            serializer: (T) -> String,
+            deserializer: (String) -> T,
+        ): Preference<T> {
+            return objects.getOrPut(key) { FakePreference(key, defaultValue as Any) } as Preference<T>
+        }
+
+        override fun getAll(): Map<String, *> {
+            return emptyMap<String, Any>()
+        }
+    }
+
+    private class FakePreference<T>(
+        private val preferenceKey: String,
+        defaultValue: T,
+    ) : Preference<T> {
+        private val state = MutableStateFlow(defaultValue)
+
+        override fun key(): String = preferenceKey
+
+        override fun get(): T = state.value
+
+        override fun set(value: T) {
+            state.value = value
+        }
+
+        override fun isSet(): Boolean = true
+
+        override fun delete() = Unit
+
+        override fun defaultValue(): T = state.value
+
+        override fun changes(): Flow<T> = state
+
+        override fun stateIn(scope: CoroutineScope) = state
+    }
+}

@@ -1,0 +1,5 @@
+package mihon.domain.extensionstore.anime.repository
+
+import mihon.domain.extensionstore.repository.ExtensionStoreRepository
+
+interface AnimeExtensionStoreRepository : ExtensionStoreRepository

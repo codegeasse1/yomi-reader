@@ -1,0 +1,93 @@
+package eu.kanade.presentation.library.anime
+
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import eu.kanade.presentation.library.components.DownloadsBadge
+import eu.kanade.presentation.library.components.EntryComfortableGridItem
+import eu.kanade.presentation.library.components.LanguageBadge
+import eu.kanade.presentation.library.components.LazyLibraryGrid
+import eu.kanade.presentation.library.components.PinnedBadge
+import eu.kanade.presentation.library.components.UnviewedBadge
+import eu.kanade.presentation.library.components.globalSearchItem
+import eu.kanade.presentation.library.components.idsToHashSet
+import eu.kanade.presentation.library.components.shouldShowContinueViewingAction
+import eu.kanade.tachiyomi.ui.library.anime.AnimeLibraryItem
+import tachiyomi.domain.entries.anime.model.AnimeCover
+import tachiyomi.domain.library.anime.LibraryAnime
+
+@Composable
+internal fun AnimeLibraryComfortableGrid(
+    items: List<AnimeLibraryItem>,
+    columns: Int,
+    contentPadding: PaddingValues,
+    selection: List<LibraryAnime>,
+    selectedIds: Set<Long> = selection.idsToHashSet { it.id },
+    state: LazyGridState = rememberLazyGridState(),
+    onClick: (LibraryAnime) -> Unit,
+    onLongClick: (LibraryAnime) -> Unit,
+    onTogglePinned: (AnimeLibraryItem) -> Unit,
+    onClickContinueWatching: ((LibraryAnime) -> Unit)?,
+    searchQuery: String?,
+    onGlobalSearchClicked: () -> Unit,
+) {
+    LazyLibraryGrid(
+        state = state,
+        modifier = Modifier.fillMaxSize(),
+        columns = columns,
+        contentPadding = contentPadding,
+    ) {
+        globalSearchItem(searchQuery, onGlobalSearchClicked)
+
+        items(
+            items = items,
+            key = { it.libraryAnime.id },
+            contentType = { "anime_library_comfortable_grid_item" },
+        ) { libraryItem ->
+            val anime = libraryItem.libraryAnime.anime
+            EntryComfortableGridItem(
+                isSelected = selectedIds.contains(libraryItem.libraryAnime.id),
+                title = anime.displayTitle,
+                coverData = AnimeCover(
+                    animeId = anime.id,
+                    sourceId = anime.source,
+                    isAnimeFavorite = anime.favorite,
+                    url = anime.thumbnailUrl,
+                    lastModified = anime.coverLastModified,
+                ),
+                coverBadgeStart = {
+                    DownloadsBadge(count = libraryItem.downloadCount)
+                    UnviewedBadge(count = libraryItem.unseenCount)
+                },
+                coverBadgeEnd = {
+                    LanguageBadge(
+                        isLocal = libraryItem.isLocal,
+                        sourceLanguage = libraryItem.sourceLanguage,
+                    )
+                },
+                topEndBadge = if (libraryItem.pinned) {
+                    { PinnedBadge() }
+                } else {
+                    null
+                },
+                menuContent = null,
+                onLongClick = { onLongClick(libraryItem.libraryAnime) },
+                onClick = { onClick(libraryItem.libraryAnime) },
+                onClickContinueViewing = if (
+                    shouldShowContinueViewingAction(
+                        hasContinueAction = onClickContinueWatching != null,
+                        remainingCount = libraryItem.libraryAnime.unseenCount,
+                    )
+                ) {
+                    { onClickContinueWatching?.invoke(libraryItem.libraryAnime) }
+                } else {
+                    null
+                },
+            )
+        }
+    }
+}

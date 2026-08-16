@@ -1,0 +1,12 @@
+-- Add extension_store table (used by extension repo/store feature for manga, anime, novel).
+-- This table may have been added to the schema after some user DBs were created.
+CREATE TABLE IF NOT EXISTS extension_store(
+    index_url TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    badge_label TEXT NOT NULL,
+    signing_key TEXT NOT NULL,
+    contact_website TEXT NOT NULL,
+    contact_discord TEXT,
+    is_legacy INTEGER NOT NULL,
+    extension_list_url TEXT
+);

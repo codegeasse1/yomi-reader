@@ -1,0 +1,276 @@
+package eu.kanade.presentation.more.settings
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.structuralEqualityPolicy
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import eu.kanade.presentation.more.settings.AURORA_SETTINGS_CARD_SHAPE
+import eu.kanade.presentation.more.settings.LocalSettingsUiStyle
+import eu.kanade.presentation.more.settings.SettingsUiStyle
+import eu.kanade.presentation.more.settings.settingsCardContainerColor
+import eu.kanade.presentation.more.settings.widget.AuroraSettingsCard
+import eu.kanade.presentation.more.settings.widget.EditTextPreferenceWidget
+import eu.kanade.presentation.more.settings.widget.InfoWidget
+import eu.kanade.presentation.more.settings.widget.ListPreferenceWidget
+import eu.kanade.presentation.more.settings.widget.MultiSelectListPreferenceWidget
+import eu.kanade.presentation.more.settings.widget.PrefsHorizontalPadding
+import eu.kanade.presentation.more.settings.widget.PrefsVerticalPadding
+import eu.kanade.presentation.more.settings.widget.SwitchPreferenceWidget
+import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
+import eu.kanade.presentation.more.settings.widget.TitleFontSize
+import eu.kanade.presentation.more.settings.widget.TrackingPreferenceWidget
+import kotlinx.coroutines.launch
+import tachiyomi.presentation.core.components.BaseSliderItem
+import tachiyomi.presentation.core.util.collectAsStateWithLifecycle
+
+val LocalPreferenceHighlighted = compositionLocalOf(structuralEqualityPolicy()) { false }
+val LocalPreferenceMinHeight = compositionLocalOf(structuralEqualityPolicy()) { 56.dp }
+
+@Composable
+fun StatusWrapper(
+    item: Preference.PreferenceItem<*>,
+    highlightKey: String?,
+    content: @Composable () -> Unit,
+) {
+    val visible = item.visible
+    val highlighted = item.title == highlightKey
+    AnimatedVisibility(
+        visible = visible,
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut(),
+        content = {
+            CompositionLocalProvider(
+                LocalPreferenceHighlighted provides highlighted,
+                content = content,
+            )
+        },
+    )
+}
+
+@Composable
+internal fun PreferenceItem(
+    item: Preference.PreferenceItem<*>,
+    highlightKey: String?,
+    modifier: Modifier = Modifier,
+) {
+    val scope = rememberCoroutineScope()
+    val isAurora = LocalSettingsUiStyle.current == SettingsUiStyle.Aurora
+    StatusWrapper(
+        item = item,
+        highlightKey = highlightKey,
+    ) {
+        Box(modifier = modifier) {
+            when (item) {
+                is Preference.PreferenceItem.SwitchPreference -> {
+                    val value by item.preference.collectAsStateWithLifecycle()
+                    SwitchPreferenceWidget(
+                        title = item.title,
+                        subtitle = item.subtitle,
+                        icon = item.icon,
+                        checked = value,
+                        enabled = item.enabled,
+                        onCheckedChanged = { newValue ->
+                            scope.launch {
+                                if (item.onValueChanged(newValue)) {
+                                    item.preference.set(newValue)
+                                }
+                            }
+                        },
+                    )
+                }
+                is Preference.PreferenceItem.SliderPreference -> {
+                    if (isAurora) {
+                        AuroraSettingsCard {
+                            BaseSliderItem(
+                                label = item.title,
+                                value = item.value,
+                                valueRange = item.valueRange,
+                                valueText = item.subtitle.takeUnless { it.isNullOrEmpty() } ?: item.value.toString(),
+                                steps = item.steps,
+                                labelStyle = MaterialTheme.typography.titleLarge.copy(fontSize = TitleFontSize),
+                                onChange = {
+                                    scope.launch {
+                                        item.onValueChanged(it)
+                                    }
+                                },
+                                modifier = Modifier.padding(
+                                    horizontal = PrefsHorizontalPadding,
+                                    vertical = PrefsVerticalPadding,
+                                ),
+                            )
+                        }
+                    } else {
+                        BaseSliderItem(
+                            label = item.title,
+                            value = item.value,
+                            valueRange = item.valueRange,
+                            valueText = item.subtitle.takeUnless { it.isNullOrEmpty() } ?: item.value.toString(),
+                            steps = item.steps,
+                            labelStyle = MaterialTheme.typography.titleLarge.copy(fontSize = TitleFontSize),
+                            onChange = {
+                                scope.launch {
+                                    item.onValueChanged(it)
+                                }
+                            },
+                            modifier = Modifier.padding(
+                                horizontal = PrefsHorizontalPadding,
+                                vertical = PrefsVerticalPadding,
+                            ),
+                        )
+                    }
+                }
+                is Preference.PreferenceItem.ListPreference<*> -> {
+                    val value by item.preference.collectAsStateWithLifecycle()
+                    ListPreferenceWidget(
+                        value = value,
+                        title = item.title,
+                        subtitle = item.internalSubtitleProvider(value, item.entries),
+                        icon = item.icon,
+                        entries = item.entries,
+                        enabled = item.enabled,
+                        onValueChange = { newValue ->
+                            scope.launch {
+                                if (item.internalOnValueChanged(newValue!!)) {
+                                    item.internalSet(newValue)
+                                }
+                            }
+                        },
+                    )
+                }
+                is Preference.PreferenceItem.BasicListPreference -> {
+                    ListPreferenceWidget(
+                        value = item.value,
+                        title = item.title,
+                        subtitle = item.subtitleProvider(item.value, item.entries),
+                        icon = item.icon,
+                        entries = item.entries,
+                        onValueChange = { scope.launch { item.onValueChanged(it) } },
+                    )
+                }
+                is Preference.PreferenceItem.MultiSelectListPreference -> {
+                    val values by item.preference.collectAsStateWithLifecycle()
+                    MultiSelectListPreferenceWidget(
+                        preference = item,
+                        values = values,
+                        onValuesChange = { newValues ->
+                            scope.launch {
+                                if (item.onValueChanged(newValues)) {
+                                    item.preference.set(newValues.toMutableSet())
+                                }
+                            }
+                        },
+                    )
+                }
+                is Preference.PreferenceItem.TextPreference -> {
+                    TextPreferenceWidget(
+                        title = item.title,
+                        subtitle = item.subtitle,
+                        icon = item.icon,
+                        enabled = item.enabled,
+                        widget = item.widget,
+                        onPreferenceClick = item.onClick,
+                    )
+                }
+                is Preference.PreferenceItem.EditTextPreference -> {
+                    val values by item.preference.collectAsStateWithLifecycle()
+                    EditTextPreferenceWidget(
+                        title = item.title,
+                        subtitle = item.subtitle,
+                        icon = item.icon,
+                        value = values,
+                        enabled = item.enabled,
+                        onConfirm = {
+                            val accepted = item.onValueChanged(it)
+                            if (accepted) item.preference.set(it)
+                            accepted
+                        },
+                    )
+                }
+                is Preference.PreferenceItem.MultiLineEditTextPreference -> {
+                    val values by item.preference.collectAsStateWithLifecycle()
+                    EditTextPreferenceWidget(
+                        title = item.title,
+                        subtitle = item.subtitle,
+                        icon = item.icon,
+                        value = values,
+                        enabled = item.enabled,
+                        onConfirm = {
+                            val accepted = item.onValueChanged(it)
+                            if (accepted) item.preference.set(it)
+                            accepted
+                        },
+                        singleLine = false,
+                        canBeBlank = item.canBeBlank,
+                    )
+                }
+                is Preference.PreferenceItem.MPVConfPreference -> {
+                    val values by item.preference.collectAsStateWithLifecycle()
+                    EditTextPreferenceWidget(
+                        title = item.title,
+                        subtitle = item.subtitle,
+                        icon = item.icon,
+                        value = values,
+                        onConfirm = {
+                            val accepted = item.onValueChanged(it)
+                            if (accepted) item.preference.set(it)
+                            accepted
+                        },
+                        singleLine = false,
+                        canBeBlank = item.canBeBlank,
+                        formatSubtitle = false,
+                    )
+                }
+                is Preference.PreferenceItem.EditTextInfoPreference -> {
+                    val values by item.preference.collectAsStateWithLifecycle()
+                    EditTextPreferenceWidget(
+                        title = item.title,
+                        subtitle = item.subtitle,
+                        dialogSubtitle = item.dialogSubtitle,
+                        icon = item.icon,
+                        value = values,
+                        enabled = item.enabled,
+                        onConfirm = {
+                            val accepted = item.onValueChanged(it)
+                            if (accepted) item.preference.set(it)
+                            accepted
+                        },
+                        singleLine = true,
+                        canBeBlank = true,
+                        validate = item.validate,
+                        errorMessage = item.errorMessage,
+                        keyboardOptions = item.keyboardOptions,
+                    )
+                }
+                is Preference.PreferenceItem.TrackerPreference -> {
+                    val isLoggedIn by item.tracker.let { tracker ->
+                        tracker.isLoggedInFlow.collectAsStateWithLifecycle(tracker.isLoggedIn)
+                    }
+                    TrackingPreferenceWidget(
+                        tracker = item.tracker,
+                        checked = isLoggedIn,
+                        onClick = { if (isLoggedIn) item.logout() else item.login() },
+                    )
+                }
+                is Preference.PreferenceItem.InfoPreference -> {
+                    InfoWidget(text = item.title)
+                }
+                is Preference.PreferenceItem.CustomPreference -> {
+                    item.content()
+                }
+            }
+        }
+    }
+}

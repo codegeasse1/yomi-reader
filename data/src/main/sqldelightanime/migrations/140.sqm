@@ -1,0 +1,23 @@
+-- 1. Индексы для эпизодов и истории просмотров аниме
+CREATE INDEX IF NOT EXISTS episodes_url_index ON episodes(url);
+CREATE INDEX IF NOT EXISTS animehistory_last_seen_index ON animehistory(last_seen DESC);
+
+-- 2. Удаление дублирующегося индекса истории
+DROP INDEX IF EXISTS animehistory_history_episode_id_index;
+
+-- 3. Индекс по дате добавления в любимое
+CREATE INDEX IF NOT EXISTS animes_favorite_modified_at_index ON animes(favorite_modified_at DESC);
+
+-- 4. Обновление триггера изменения favorite (с безопасным удалением обеих вариаций имен)
+DROP TRIGGER IF EXISTS update_last_favorite_at_animes;
+DROP TRIGGER IF EXISTS update_last_favorited_at_animes;
+
+CREATE TRIGGER update_last_favorite_at_animes
+AFTER UPDATE OF favorite ON animes
+FOR EACH ROW
+WHEN old.favorite != new.favorite
+BEGIN
+  UPDATE animes
+  SET favorite_modified_at = strftime('%s', 'now')
+  WHERE _id = new._id;
+END;

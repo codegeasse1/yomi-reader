@@ -1,0 +1,26 @@
+-- 1. Индексы для глав и истории
+CREATE INDEX IF NOT EXISTS chapters_url_index ON chapters(url);
+CREATE INDEX IF NOT EXISTS history_last_read_index ON history(last_read DESC);
+
+-- 2. Оптимизация индекса исключенных сканлейторов (композитный)
+CREATE INDEX IF NOT EXISTS excluded_scanlators_manga_id_scanlator_index ON excluded_scanlators(manga_id, scanlator);
+
+-- 3. Удаление дублирующегося индекса history
+DROP INDEX IF EXISTS history_history_chapter_id_index;
+
+-- 4. Индекс по дате добавления в любимое
+CREATE INDEX IF NOT EXISTS mangas_favorite_modified_at_index ON mangas(favorite_modified_at DESC);
+
+-- 5. Обновление триггера изменения favorite (с безопасным удалением обеих вариаций имен)
+DROP TRIGGER IF EXISTS update_last_favorite_at_mangas;
+DROP TRIGGER IF EXISTS update_last_favorited_at_mangas;
+
+CREATE TRIGGER update_last_favorite_at_mangas
+AFTER UPDATE OF favorite ON mangas
+FOR EACH ROW
+WHEN old.favorite != new.favorite
+BEGIN
+  UPDATE mangas
+  SET favorite_modified_at = strftime('%s', 'now')
+  WHERE _id = new._id;
+END;

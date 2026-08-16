@@ -1,0 +1,75 @@
+package eu.kanade.presentation.more.settings.screen
+
+import eu.kanade.domain.ui.UiPreferences
+import eu.kanade.domain.ui.model.AuroraTitleHeroCtaMode
+import eu.kanade.domain.ui.model.HomeHeroCtaMode
+import eu.kanade.domain.ui.model.HomeHubRecentCardMode
+import io.kotest.matchers.shouldBe
+import org.junit.jupiter.api.Test
+
+class SettingsAppearanceGreetingExpansionTest {
+
+    @Test
+    fun `toggleGreetingSettingsExpanded switches false to true`() {
+        toggleGreetingSettingsExpanded(false) shouldBe true
+    }
+
+    @Test
+    fun `toggleGreetingSettingsExpanded switches true to false`() {
+        toggleGreetingSettingsExpanded(true) shouldBe false
+    }
+
+    @Test
+    fun `toggleAuroraCustomizationExpanded switches false to true`() {
+        toggleAuroraCustomizationExpanded(false) shouldBe true
+    }
+
+    @Test
+    fun `toggleAuroraCustomizationExpanded switches true to false`() {
+        toggleAuroraCustomizationExpanded(true) shouldBe false
+    }
+
+    @Test
+    fun `font reset action disabled when both appearance fonts use defaults`() {
+        shouldEnableAppearanceFontsReset(
+            appUiFontId = UiPreferences.DEFAULT_APP_UI_FONT_ID,
+            coverTitleFontId = UiPreferences.DEFAULT_COVER_TITLE_FONT_ID,
+        ) shouldBe false
+    }
+
+    @Test
+    fun `font reset action enabled when any appearance font is customized`() {
+        shouldEnableAppearanceFontsReset(
+            appUiFontId = "custom-ui",
+            coverTitleFontId = UiPreferences.DEFAULT_COVER_TITLE_FONT_ID,
+        ) shouldBe true
+        shouldEnableAppearanceFontsReset(
+            appUiFontId = UiPreferences.DEFAULT_APP_UI_FONT_ID,
+            coverTitleFontId = "custom-cover",
+        ) shouldBe true
+    }
+
+    @Test
+    fun `home hero cta mode picker options keep stable visual order`() {
+        resolveHomeHeroCtaModeOptions() shouldBe listOf(
+            HomeHeroCtaMode.Aurora,
+            HomeHeroCtaMode.Classic,
+        )
+    }
+
+    @Test
+    fun `home recent card mode picker options keep stable visual order`() {
+        resolveHomeHubRecentCardModeOptions() shouldBe listOf(
+            HomeHubRecentCardMode.Aurora,
+            HomeHubRecentCardMode.Classic,
+        )
+    }
+
+    @Test
+    fun `aurora title hero cta mode picker options keep stable visual order`() {
+        resolveAuroraTitleHeroCtaModeOptions() shouldBe listOf(
+            AuroraTitleHeroCtaMode.Aurora,
+            AuroraTitleHeroCtaMode.Classic,
+        )
+    }
+}

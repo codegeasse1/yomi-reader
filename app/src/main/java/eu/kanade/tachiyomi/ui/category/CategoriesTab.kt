@@ -1,0 +1,148 @@
+package eu.kanade.tachiyomi.ui.category
+
+import androidx.compose.animation.graphics.res.animatedVectorResource
+import androidx.compose.animation.graphics.res.rememberAnimatedVectorPainter
+import androidx.compose.animation.graphics.vector.AnimatedImageVector
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import cafe.adriel.voyager.core.model.rememberScreenModel
+import cafe.adriel.voyager.navigator.LocalNavigator
+import cafe.adriel.voyager.navigator.currentOrThrow
+import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
+import cafe.adriel.voyager.navigator.tab.TabOptions
+import com.yomi.reader.R
+import eu.kanade.domain.ui.UiPreferences
+import eu.kanade.presentation.components.TabbedScreen
+import eu.kanade.presentation.components.TabbedScreenAurora
+import eu.kanade.presentation.util.Tab
+import eu.kanade.tachiyomi.ui.category.anime.AnimeCategoryEvent
+import eu.kanade.tachiyomi.ui.category.anime.AnimeCategoryScreenModel
+import eu.kanade.tachiyomi.ui.category.anime.animeCategoryTab
+import eu.kanade.tachiyomi.ui.category.manga.MangaCategoryEvent
+import eu.kanade.tachiyomi.ui.category.manga.MangaCategoryScreenModel
+import eu.kanade.tachiyomi.ui.category.manga.mangaCategoryTab
+import eu.kanade.tachiyomi.ui.category.novel.NovelCategoryEvent
+import eu.kanade.tachiyomi.ui.category.novel.NovelCategoryScreenModel
+import eu.kanade.tachiyomi.ui.category.novel.novelCategoryTab
+import eu.kanade.tachiyomi.ui.main.MainActivity
+import eu.kanade.tachiyomi.util.system.toast
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
+import tachiyomi.i18n.aniyomi.AYMR
+import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.presentation.core.util.collectAsState
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
+
+data object CategoriesTab : Tab {
+
+    override val options: TabOptions
+        @Composable
+        get() {
+            val isSelected = LocalTabNavigator.current.current.key == key
+            val image = AnimatedImageVector.animatedVectorResource(R.drawable.anim_updates_enter)
+            return TabOptions(
+                index = 7u,
+                title = stringResource(AYMR.strings.general_categories),
+                icon = rememberAnimatedVectorPainter(image, isSelected),
+            )
+        }
+
+    private val switchToMangaCategoryTabChannel = Channel<Unit>(1, BufferOverflow.DROP_OLDEST)
+    private val switchToNovelCategoryTabChannel = Channel<Unit>(1, BufferOverflow.DROP_OLDEST)
+
+    fun showMangaCategory() {
+        switchToMangaCategoryTabChannel.trySend(Unit)
+    }
+
+    fun showNovelCategory() {
+        switchToNovelCategoryTabChannel.trySend(Unit)
+    }
+
+    @Composable
+    override fun Content() {
+        val context = LocalContext.current
+        val navigator = LocalNavigator.currentOrThrow
+        val uiPreferences = Injekt.get<UiPreferences>()
+        val theme by uiPreferences.appTheme().collectAsState()
+        val canNavigateUp = remember { navigator.canPop }
+        val navigateUp = if (canNavigateUp) {
+            {
+                navigator.pop()
+                Unit
+            }
+        } else {
+            null
+        }
+
+        val animeCategoryScreenModel = rememberScreenModel { AnimeCategoryScreenModel() }
+        val mangaCategoryScreenModel = rememberScreenModel { MangaCategoryScreenModel() }
+        val novelCategoryScreenModel = rememberScreenModel { NovelCategoryScreenModel() }
+
+        val tabs = persistentListOf(
+            animeCategoryTab().copy(navigateUp = navigateUp),
+            mangaCategoryTab().copy(navigateUp = navigateUp),
+            novelCategoryTab().copy(navigateUp = navigateUp),
+        )
+
+        val state = rememberPagerState { tabs.size }
+
+        if (theme.isAuroraStyle) {
+            TabbedScreenAurora(
+                titleRes = AYMR.strings.general_categories,
+                tabs = tabs,
+                state = state,
+            )
+        } else {
+            TabbedScreen(
+                titleRes = AYMR.strings.general_categories,
+                tabs = tabs,
+                state = state,
+            )
+        }
+        LaunchedEffect(Unit) {
+            switchToMangaCategoryTabChannel.receiveAsFlow()
+                .collectLatest { state.scrollToPage(1) }
+        }
+        LaunchedEffect(Unit) {
+            switchToNovelCategoryTabChannel.receiveAsFlow()
+                .collectLatest { state.scrollToPage(2) }
+        }
+
+        LaunchedEffect(Unit) {
+            (context as? MainActivity)?.ready = true
+        }
+
+        LaunchedEffect(Unit) {
+            launch {
+                mangaCategoryScreenModel.events.collectLatest { event ->
+                    if (event is MangaCategoryEvent.LocalizedMessage) {
+                        context.toast(event.stringRes)
+                    }
+                }
+            }
+            launch {
+                animeCategoryScreenModel.events.collectLatest { event ->
+                    if (event is AnimeCategoryEvent.LocalizedMessage) {
+                        context.toast(event.stringRes)
+                    }
+                }
+            }
+            launch {
+                novelCategoryScreenModel.events.collectLatest { event ->
+                    if (event is NovelCategoryEvent.LocalizedMessage) {
+                        context.toast(event.stringRes)
+                    }
+                }
+            }
+        }
+    }
+}

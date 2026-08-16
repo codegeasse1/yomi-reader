@@ -1,0 +1,1215 @@
+package eu.kanade.presentation.more.settings.screen
+
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.ManagedActivityResultLauncher
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.outlined.Backup
+import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
+import cafe.adriel.voyager.navigator.LocalNavigator
+import cafe.adriel.voyager.navigator.currentOrThrow
+import com.hippo.unifile.UniFile
+import eu.kanade.domain.sync.SyncPreferences
+import eu.kanade.presentation.more.resolveAuroraMoreCardBorderColor
+import eu.kanade.presentation.more.resolveAuroraMoreCardContainerColor
+import eu.kanade.presentation.more.settings.AuroraTopBarIconButton
+import eu.kanade.presentation.more.settings.LocalSettingsUiStyle
+import eu.kanade.presentation.more.settings.Preference
+import eu.kanade.presentation.more.settings.SettingsUiStyle
+import eu.kanade.presentation.more.settings.rememberResolvedSettingsUiStyle
+import eu.kanade.presentation.more.settings.screen.anilist.AnilistImportScreen
+import eu.kanade.presentation.more.settings.screen.anixart.AnixartImportScreen
+import eu.kanade.presentation.more.settings.screen.data.CloudSyncOptionsScreen
+import eu.kanade.presentation.more.settings.screen.data.CreateBackupScreen
+import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
+import eu.kanade.presentation.more.settings.screen.data.StorageInfo
+import eu.kanade.presentation.more.settings.screen.shikimori.ShikimoriImportScreen
+import eu.kanade.presentation.more.settings.widget.BasePreferenceWidget
+import eu.kanade.presentation.more.settings.widget.PrefsHorizontalPadding
+import eu.kanade.presentation.theme.AuroraSurfaceLevel
+import eu.kanade.presentation.theme.AuroraTheme
+import eu.kanade.presentation.theme.resolveAuroraElevation
+import eu.kanade.presentation.util.relativeTimeSpanString
+import eu.kanade.tachiyomi.data.backup.create.BackupCreateJob
+import eu.kanade.tachiyomi.data.backup.restore.BackupRestoreJob
+import eu.kanade.tachiyomi.data.cache.ChapterCache
+import eu.kanade.tachiyomi.data.export.ExportEntry
+import eu.kanade.tachiyomi.data.export.ExportEntry.Companion.toExportEntry
+import eu.kanade.tachiyomi.data.export.LibraryExporter
+import eu.kanade.tachiyomi.data.export.LibraryExporter.ExportOptions
+import eu.kanade.tachiyomi.data.sync.SyncManager
+import eu.kanade.tachiyomi.data.sync.service.GoogleDriveService
+import eu.kanade.tachiyomi.data.sync.service.GoogleDriveSyncService
+import eu.kanade.tachiyomi.data.sync.service.SyncJob
+import eu.kanade.tachiyomi.ui.storage.StorageTab
+import eu.kanade.tachiyomi.util.system.DeviceUtil
+import eu.kanade.tachiyomi.util.system.toast
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentMapOf
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import logcat.LogPriority
+import tachiyomi.core.common.i18n.stringResource
+import tachiyomi.core.common.storage.displayablePath
+import tachiyomi.core.common.util.lang.launchNonCancellable
+import tachiyomi.core.common.util.lang.withUIContext
+import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.backup.service.BackupPreferences
+import tachiyomi.domain.entries.anime.interactor.GetAnimeFavorites
+import tachiyomi.domain.entries.manga.interactor.GetMangaFavorites
+import tachiyomi.domain.entries.novel.interactor.GetNovelFavorites
+import tachiyomi.domain.library.service.LibraryPreferences
+import tachiyomi.domain.storage.service.StorageManager
+import tachiyomi.domain.storage.service.StoragePreferences
+import tachiyomi.i18n.MR
+import tachiyomi.i18n.aniyomi.AYMR
+import tachiyomi.presentation.core.components.material.TextButton
+import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.presentation.core.util.LocalAppHaptics
+import tachiyomi.presentation.core.util.collectAsState
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
+
+object SettingsDataScreen : SearchableSettings {
+
+    val restorePreferenceKeyString = MR.strings.label_backup
+    const val HELP_URL = "https://aniyomi.org/docs/faq/storage"
+
+    @ReadOnlyComposable
+    @Composable
+    override fun getTitleRes() = MR.strings.label_data_storage
+
+    @Composable
+    override fun RowScope.AppBarAction() {
+        val uriHandler = LocalUriHandler.current
+        val uiStyle = rememberResolvedSettingsUiStyle()
+        if (uiStyle == SettingsUiStyle.Aurora) {
+            AuroraTopBarIconButton(
+                onClick = { uriHandler.openUri(HELP_URL) },
+                icon = Icons.AutoMirrored.Outlined.HelpOutline,
+                contentDescription = stringResource(MR.strings.tracking_guide),
+            )
+        } else {
+            IconButton(onClick = { uriHandler.openUri(HELP_URL) }) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
+                    contentDescription = stringResource(MR.strings.tracking_guide),
+                )
+            }
+        }
+    }
+
+    @Composable
+    override fun getPreferences(): List<Preference> {
+        val backupPreferences = Injekt.get<BackupPreferences>()
+        val storagePreferences = Injekt.get<StoragePreferences>()
+
+        return persistentListOf(
+            getStorageLocationPref(storagePreferences = storagePreferences),
+            Preference.PreferenceItem.InfoPreference(stringResource(MR.strings.pref_storage_location_info)),
+
+            getBackupAndRestoreGroup(backupPreferences = backupPreferences),
+            getCloudSyncGroup(),
+            getDataGroup(),
+            getImportGroup(),
+            getExportGroup(),
+        )
+    }
+
+    @Composable
+    fun storageLocationPicker(
+        storageDirPref: tachiyomi.core.common.preference.Preference<String>,
+    ): ManagedActivityResultLauncher<Uri?, Uri?> {
+        val context = LocalContext.current
+        val scope = rememberCoroutineScope()
+        val storageManager = remember { Injekt.get<StorageManager>() }
+        var showStorageUnavailableDialog by remember { mutableStateOf(false) }
+
+        if (showStorageUnavailableDialog) {
+            AlertDialog(
+                onDismissRequest = { showStorageUnavailableDialog = false },
+                title = { Text(text = stringResource(MR.strings.storage_location_unavailable)) },
+                text = { Text(text = stringResource(MR.strings.storage_location_unavailable_message)) },
+                confirmButton = {
+                    TextButton(onClick = { showStorageUnavailableDialog = false }) {
+                        Text(text = stringResource(MR.strings.action_ok))
+                    }
+                },
+            )
+        }
+
+        return rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocumentTree(),
+        ) { uri ->
+            uri?.let { selectedUri ->
+                scope.launch {
+                    val canWrite = withContext(Dispatchers.IO) {
+                        storageManager.canWriteTo(selectedUri)
+                    }
+
+                    if (canWrite) {
+                        persistStorageLocation(context, storageDirPref, selectedUri)
+                    } else {
+                        showStorageUnavailableDialog = true
+                    }
+                }
+            }
+        }
+    }
+
+    private fun persistStorageLocation(
+        context: Context,
+        storageDirPref: tachiyomi.core.common.preference.Preference<String>,
+        uri: Uri,
+    ) {
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+
+        try {
+            context.contentResolver.takePersistableUriPermission(uri, flags)
+        } catch (e: SecurityException) {
+            logcat(priority = LogPriority.ERROR, throwable = e)
+            context.toast(MR.strings.file_picker_uri_permission_unsupported)
+        }
+
+        UniFile.fromUri(context, uri)?.let {
+            storageDirPref.set(it.uri.toString())
+        }
+    }
+
+    @Composable
+    fun storageLocationText(
+        storageDirPref: tachiyomi.core.common.preference.Preference<String>,
+    ): String {
+        val context = LocalContext.current
+        val storageDir by storageDirPref.collectAsState()
+
+        if (!storageDirPref.isSet()) {
+            return stringResource(MR.strings.no_location_set)
+        }
+
+        return remember(storageDir) {
+            val file = UniFile.fromUri(context, storageDir.toUri())
+            file?.displayablePath
+        } ?: stringResource(MR.strings.invalid_location, storageDir)
+    }
+
+    @Composable
+    private fun getStorageLocationPref(
+        storagePreferences: StoragePreferences,
+    ): Preference.PreferenceItem.TextPreference {
+        val context = LocalContext.current
+        val pickStorageLocation = storageLocationPicker(storagePreferences.baseStorageDirectory())
+
+        return Preference.PreferenceItem.TextPreference(
+            title = stringResource(MR.strings.pref_storage_location),
+            subtitle = storageLocationText(storagePreferences.baseStorageDirectory()),
+            onClick = {
+                try {
+                    pickStorageLocation.launch(null)
+                } catch (e: ActivityNotFoundException) {
+                    context.toast(MR.strings.file_picker_error)
+                }
+            },
+        )
+    }
+
+    @Composable
+    private fun getBackupAndRestoreGroup(backupPreferences: BackupPreferences): Preference.PreferenceGroup {
+        val context = LocalContext.current
+        val navigator = LocalNavigator.currentOrThrow
+
+        val lastAutoBackup by backupPreferences.lastAutoBackupTimestamp().collectAsState()
+        val backupInterval by backupPreferences.backupInterval().collectAsState()
+
+        val chooseBackup = rememberLauncherForActivityResult(
+            object : ActivityResultContracts.GetContent() {
+                override fun createIntent(context: Context, input: String): Intent {
+                    val intent = super.createIntent(context, input)
+                    return Intent.createChooser(intent, context.stringResource(MR.strings.file_select_backup))
+                }
+            },
+        ) {
+            if (it == null) {
+                context.toast(MR.strings.file_null_uri_error)
+                return@rememberLauncherForActivityResult
+            }
+
+            navigator.push(RestoreBackupScreen(it.toString()))
+        }
+
+        val cloudBackupPicker = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocumentTree(),
+        ) { uri ->
+            if (uri != null) {
+                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                try {
+                    context.contentResolver.takePersistableUriPermission(uri, flags)
+                } catch (e: SecurityException) {
+                    logcat(LogPriority.ERROR, e)
+                    context.toast(MR.strings.file_picker_uri_permission_unsupported)
+                }
+                backupPreferences.cloudBackupUri().set(uri.toString())
+            }
+        }
+
+        return Preference.PreferenceGroup(
+            title = stringResource(MR.strings.label_backup),
+            preferenceItems = persistentListOf(
+                // Manual actions
+                Preference.PreferenceItem.CustomPreference(
+                    title = stringResource(restorePreferenceKeyString),
+                ) {
+                    val context = LocalContext.current
+                    val navigator = LocalNavigator.currentOrThrow
+                    val appHaptics = LocalAppHaptics.current
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        val isAurora = LocalSettingsUiStyle.current == SettingsUiStyle.Aurora
+                        val cardShape = RoundedCornerShape(16.dp)
+
+                        // Create Backup interactive state
+                        val createInteractionSource = remember { MutableInteractionSource() }
+                        val isCreatePressed by createInteractionSource.collectIsPressedAsState()
+                        val createScale by animateFloatAsState(
+                            targetValue = if (isCreatePressed) 0.96f else 1f,
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                                stiffness = androidx.compose.animation.core.Spring.StiffnessLow,
+                            ),
+                            label = "create_backup_scale",
+                        )
+
+                        // Restore Backup interactive state
+                        val restoreInteractionSource = remember { MutableInteractionSource() }
+                        val isRestorePressed by restoreInteractionSource.collectIsPressedAsState()
+                        val restoreScale by animateFloatAsState(
+                            targetValue = if (isRestorePressed) 0.96f else 1f,
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                                stiffness = androidx.compose.animation.core.Spring.StiffnessLow,
+                            ),
+                            label = "restore_backup_scale",
+                        )
+
+                        // Create Backup card
+                        if (isAurora) {
+                            val auroraColors = AuroraTheme.colors
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .graphicsLayer {
+                                        scaleX = createScale
+                                        scaleY = createScale
+                                    }
+                                    .clickable(
+                                        interactionSource = createInteractionSource,
+                                        indication = androidx.compose.foundation.LocalIndication.current,
+                                        onClick = {
+                                            appHaptics.tap()
+                                            navigator.push(CreateBackupScreen())
+                                        },
+                                    ),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (auroraColors.isDark || auroraColors.isEInk) {
+                                        resolveAuroraMoreCardContainerColor(auroraColors)
+                                    } else {
+                                        Color.White
+                                    },
+                                ),
+                                border = if (auroraColors.isEInk) {
+                                    BorderStroke(
+                                        width = 1.dp,
+                                        color = resolveAuroraMoreCardBorderColor(auroraColors),
+                                    )
+                                } else {
+                                    BorderStroke(
+                                        width = 1.dp,
+                                        color = if (auroraColors.isDark) {
+                                            Color.White.copy(alpha = 0.08f)
+                                        } else {
+                                            Color.Transparent
+                                        },
+                                    )
+                                },
+                                elevation = CardDefaults.cardElevation(
+                                    defaultElevation = if (!auroraColors.isDark && !auroraColors.isEInk) {
+                                        resolveAuroraElevation(auroraColors, AuroraSurfaceLevel.Glass)
+                                    } else {
+                                        0.dp
+                                    },
+                                ),
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 20.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.CloudUpload,
+                                        contentDescription = null,
+                                        tint = auroraColors.accent,
+                                        modifier = Modifier.size(28.dp),
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Text(
+                                        text = stringResource(MR.strings.pref_create_backup),
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            letterSpacing = 0.2.sp,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        ),
+                                        color = auroraColors.textPrimary,
+                                        modifier = Modifier.padding(horizontal = 8.dp),
+                                        maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        } else {
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .graphicsLayer {
+                                        scaleX = createScale
+                                        scaleY = createScale
+                                    }
+                                    .clickable(
+                                        interactionSource = createInteractionSource,
+                                        indication = androidx.compose.foundation.LocalIndication.current,
+                                        onClick = {
+                                            appHaptics.tap()
+                                            navigator.push(CreateBackupScreen())
+                                        },
+                                    ),
+                                shape = cardShape,
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                ),
+                                border = BorderStroke(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                                ),
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 20.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.CloudUpload,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(28.dp),
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Text(
+                                        text = stringResource(MR.strings.pref_create_backup),
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            letterSpacing = 0.2.sp,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.padding(horizontal = 8.dp),
+                                        maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+
+                        // Restore Backup card
+                        if (isAurora) {
+                            val auroraColors = AuroraTheme.colors
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .graphicsLayer {
+                                        scaleX = restoreScale
+                                        scaleY = restoreScale
+                                    }
+                                    .clickable(
+                                        interactionSource = restoreInteractionSource,
+                                        indication = androidx.compose.foundation.LocalIndication.current,
+                                        onClick = {
+                                            appHaptics.tap()
+                                            if (!BackupRestoreJob.isRunning(context)) {
+                                                if (DeviceUtil.isMiui &&
+                                                    DeviceUtil.isMiuiOptimizationDisabled()
+                                                ) {
+                                                    context.toast(MR.strings.restore_miui_warning)
+                                                }
+                                                chooseBackup.launch("*/*")
+                                            } else {
+                                                context.toast(MR.strings.restore_in_progress)
+                                            }
+                                        },
+                                    ),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (auroraColors.isDark || auroraColors.isEInk) {
+                                        resolveAuroraMoreCardContainerColor(auroraColors)
+                                    } else {
+                                        Color.White
+                                    },
+                                ),
+                                border = if (auroraColors.isEInk) {
+                                    BorderStroke(
+                                        width = 1.dp,
+                                        color = resolveAuroraMoreCardBorderColor(auroraColors),
+                                    )
+                                } else {
+                                    BorderStroke(
+                                        width = 1.dp,
+                                        color = if (auroraColors.isDark) {
+                                            Color.White.copy(alpha = 0.08f)
+                                        } else {
+                                            Color.Transparent
+                                        },
+                                    )
+                                },
+                                elevation = CardDefaults.cardElevation(
+                                    defaultElevation = if (!auroraColors.isDark && !auroraColors.isEInk) {
+                                        resolveAuroraElevation(auroraColors, AuroraSurfaceLevel.Glass)
+                                    } else {
+                                        0.dp
+                                    },
+                                ),
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 20.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.CloudDownload,
+                                        contentDescription = null,
+                                        tint = auroraColors.accent,
+                                        modifier = Modifier.size(28.dp),
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Text(
+                                        text = stringResource(MR.strings.pref_restore_backup),
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            letterSpacing = 0.2.sp,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        ),
+                                        color = auroraColors.textPrimary,
+                                        modifier = Modifier.padding(horizontal = 8.dp),
+                                        maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        } else {
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .graphicsLayer {
+                                        scaleX = restoreScale
+                                        scaleY = restoreScale
+                                    }
+                                    .clickable(
+                                        interactionSource = restoreInteractionSource,
+                                        indication = androidx.compose.foundation.LocalIndication.current,
+                                        onClick = {
+                                            appHaptics.tap()
+                                            if (!BackupRestoreJob.isRunning(context)) {
+                                                if (DeviceUtil.isMiui &&
+                                                    DeviceUtil.isMiuiOptimizationDisabled()
+                                                ) {
+                                                    context.toast(MR.strings.restore_miui_warning)
+                                                }
+                                                chooseBackup.launch("*/*")
+                                            } else {
+                                                context.toast(MR.strings.restore_in_progress)
+                                            }
+                                        },
+                                    ),
+                                shape = cardShape,
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                ),
+                                border = BorderStroke(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                                ),
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 20.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.CloudDownload,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(28.dp),
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Text(
+                                        text = stringResource(MR.strings.pref_restore_backup),
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            letterSpacing = 0.2.sp,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.padding(horizontal = 8.dp),
+                                        maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+
+                // Automatic backups
+                Preference.PreferenceItem.ListPreference(
+                    preference = backupPreferences.backupInterval(),
+                    entries = persistentMapOf(
+                        0 to stringResource(MR.strings.off),
+                        6 to stringResource(MR.strings.update_6hour),
+                        12 to stringResource(MR.strings.update_12hour),
+                        24 to stringResource(MR.strings.update_24hour),
+                        48 to stringResource(MR.strings.update_48hour),
+                        168 to stringResource(MR.strings.update_weekly),
+                    ),
+                    title = stringResource(MR.strings.pref_backup_interval),
+                    onValueChanged = {
+                        BackupCreateJob.setupTask(context, it)
+                        true
+                    },
+                ),
+                Preference.PreferenceItem.ListPreference(
+                    preference = backupPreferences.numberOfBackupsToKeep(),
+                    entries = persistentMapOf(
+                        4 to stringResource(MR.strings.backup_slots_4),
+                        10 to stringResource(MR.strings.backup_slots_10),
+                        20 to stringResource(MR.strings.backup_slots_20),
+                        50 to stringResource(MR.strings.backup_slots_50),
+                        0 to stringResource(MR.strings.backup_slots_all),
+                    ),
+                    title = stringResource(MR.strings.pref_backup_slots),
+                    enabled = backupInterval != 0,
+                    onValueChanged = {
+                        true
+                    },
+                ),
+                Preference.PreferenceItem.InfoPreference(
+                    stringResource(MR.strings.backup_info) + "\n\n" +
+                        stringResource(MR.strings.last_auto_backup_info, relativeTimeSpanString(lastAutoBackup)),
+                ),
+
+                // ── Cloud Backup ────────────────────────────────────────────────
+                Preference.PreferenceItem.TextPreference(
+                    title = stringResource(MR.strings.pref_cloud_backup_folder),
+                    subtitle = stringResource(MR.strings.pref_cloud_backup_folder_subtitle) +
+                        "\n" + cloudBackupSubtitle(context, backupPreferences),
+                    onClick = {
+                        try {
+                            cloudBackupPicker.launch(null)
+                        } catch (e: ActivityNotFoundException) {
+                            context.toast(MR.strings.file_picker_error)
+                        }
+                    },
+                ),
+                Preference.PreferenceItem.InfoPreference(
+                    stringResource(MR.strings.cloud_backup_info),
+                ),
+            ),
+        )
+    }
+
+    @Composable
+    private fun getDataGroup(): Preference.PreferenceGroup {
+        val context = LocalContext.current
+        val navigator = LocalNavigator.currentOrThrow
+        val scope = rememberCoroutineScope()
+        val libraryPreferences = remember { Injekt.get<LibraryPreferences>() }
+
+        val chapterCache = remember { Injekt.get<ChapterCache>() }
+        var cacheReadableSizeSema by remember { mutableIntStateOf(0) }
+        val cacheReadableSize = remember(cacheReadableSizeSema) { chapterCache.readableSize }
+
+        return Preference.PreferenceGroup(
+            title = stringResource(MR.strings.pref_storage_usage),
+            preferenceItems = persistentListOf(
+                Preference.PreferenceItem.CustomPreference(
+                    title = stringResource(MR.strings.pref_storage_usage),
+                ) {
+                    BasePreferenceWidget(
+                        subcomponent = {
+                            StorageInfo(
+                                modifier = Modifier.padding(horizontal = PrefsHorizontalPadding),
+                            )
+                        },
+                    )
+                },
+
+                Preference.PreferenceItem.TextPreference(
+                    title = stringResource(AYMR.strings.label_storage),
+                    icon = Icons.Outlined.Storage,
+                    onClick = {
+                        navigator.push(StorageTab)
+                    },
+                ),
+
+                Preference.PreferenceItem.TextPreference(
+                    title = stringResource(AYMR.strings.pref_clear_chapter_cache),
+                    subtitle = stringResource(MR.strings.used_cache, cacheReadableSize),
+                    onClick = {
+                        scope.launchNonCancellable {
+                            try {
+                                val deletedFiles = chapterCache.clear()
+                                withUIContext {
+                                    context.toast(context.stringResource(MR.strings.cache_deleted, deletedFiles))
+                                    cacheReadableSizeSema++
+                                }
+                            } catch (e: Throwable) {
+                                this@SettingsDataScreen.logcat(LogPriority.ERROR, e)
+                                withUIContext { context.toast(MR.strings.cache_delete_error) }
+                            }
+                        }
+                    },
+                ),
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = libraryPreferences.autoClearItemCache(),
+                    title = stringResource(AYMR.strings.pref_auto_clear_chapter_cache),
+                ),
+            ),
+        )
+    }
+
+    @Composable
+    private fun getImportGroup(): Preference.PreferenceGroup {
+        val navigator = LocalNavigator.currentOrThrow
+
+        val anixartImportLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.GetContent(),
+        ) { uri ->
+            if (uri != null) {
+                // Pass URI string only — Screen must stay Serializable for Voyager state
+                // restore (lambda previously caused BadParcelableException on Android 16).
+                navigator.push(AnixartImportScreen(uri.toString()))
+            }
+        }
+
+        return Preference.PreferenceGroup(
+            title = stringResource(AYMR.strings.anixart_import_preference_group_title),
+            preferenceItems = persistentListOf(
+                Preference.PreferenceItem.TextPreference(
+                    title = stringResource(AYMR.strings.anixart_import_title),
+                    subtitle = stringResource(AYMR.strings.anixart_import_summary),
+                    icon = Icons.Outlined.CloudDownload,
+                    onClick = { anixartImportLauncher.launch("*/*") },
+                ),
+                Preference.PreferenceItem.TextPreference(
+                    title = stringResource(AYMR.strings.shikimori_import_title),
+                    subtitle = stringResource(AYMR.strings.shikimori_import_summary),
+                    icon = Icons.Outlined.CloudDownload,
+                    onClick = { navigator.push(ShikimoriImportScreen()) },
+                ),
+                Preference.PreferenceItem.TextPreference(
+                    title = stringResource(AYMR.strings.anilist_import_title),
+                    subtitle = stringResource(AYMR.strings.anilist_import_summary),
+                    icon = Icons.Outlined.CloudDownload,
+                    onClick = { navigator.push(AnilistImportScreen()) },
+                ),
+            ),
+        )
+    }
+
+    @Composable
+    private fun getCloudSyncGroup(): Preference.PreferenceGroup {
+        val context = LocalContext.current
+        val scope = rememberCoroutineScope()
+        val syncPreferences = remember { Injekt.get<SyncPreferences>() }
+        val googleDriveService = remember { Injekt.get<GoogleDriveService>() }
+        val navigator = LocalNavigator.currentOrThrow
+
+        val googleDriveAccessToken by syncPreferences.googleDriveAccessToken().collectAsState()
+        val googleDriveRefreshToken by syncPreferences.googleDriveRefreshToken().collectAsState()
+        val googleDriveEmail by syncPreferences.googleDriveEmail().collectAsState()
+        val isSignedIn = googleDriveAccessToken.isNotBlank() && googleDriveRefreshToken.isNotBlank()
+        val cloudSyncEnabledPref = syncPreferences.cloudSyncEnabled()
+        val syncService by syncPreferences.syncService().collectAsState()
+        val lastSyncTimestamp by syncPreferences.lastSyncTimestamp().collectAsState()
+
+        var showPurgeDialog by remember { mutableStateOf(false) }
+
+        // Sign in launcher
+        val signInLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.StartActivityForResult(),
+        ) { }
+
+        if (showPurgeDialog) {
+            AlertDialog(
+                onDismissRequest = { showPurgeDialog = false },
+                title = { Text(stringResource(AYMR.strings.pref_google_drive_purge_sync_data)) },
+                text = { Text(stringResource(AYMR.strings.pref_purge_confirmation_message)) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showPurgeDialog = false
+                            scope.launchNonCancellable {
+                                try {
+                                    val status = GoogleDriveSyncService(context).deleteSyncDataFromGoogleDrive()
+                                    withUIContext {
+                                        when (status) {
+                                            GoogleDriveSyncService.DeleteSyncDataStatus.SUCCESS -> {
+                                                context.toast(AYMR.strings.google_drive_sync_data_purged)
+                                            }
+                                            GoogleDriveSyncService.DeleteSyncDataStatus.NO_FILES -> {
+                                                context.toast(AYMR.strings.google_drive_sync_data_not_found)
+                                            }
+                                            GoogleDriveSyncService.DeleteSyncDataStatus.NOT_INITIALIZED,
+                                            GoogleDriveSyncService.DeleteSyncDataStatus.ERROR,
+                                            -> {
+                                                context.toast(AYMR.strings.google_drive_sync_data_purge_error)
+                                            }
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    withUIContext {
+                                        context.toast(AYMR.strings.google_drive_sync_data_purge_error)
+                                    }
+                                }
+                            }
+                        },
+                    ) {
+                        Text(stringResource(MR.strings.action_ok))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showPurgeDialog = false }) {
+                        Text(stringResource(MR.strings.action_cancel))
+                    }
+                },
+            )
+        }
+
+        var showSignOutDialog by remember { mutableStateOf(false) }
+
+        if (showSignOutDialog) {
+            AlertDialog(
+                onDismissRequest = { showSignOutDialog = false },
+                title = { Text(stringResource(AYMR.strings.pref_sign_out_confirmation_title)) },
+                text = { Text(stringResource(AYMR.strings.pref_sign_out_confirmation_message)) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showSignOutDialog = false
+                            scope.launchNonCancellable {
+                                googleDriveService.signOut()
+                                syncPreferences.syncService().set(SyncPreferences.SYNC_SERVICE_NONE)
+                                cloudSyncEnabledPref.set(false)
+                                SyncJob.setupTask(context, 0)
+                                withUIContext {
+                                    context.toast(AYMR.strings.pref_google_drive_sign_out)
+                                }
+                            }
+                        },
+                    ) {
+                        Text(stringResource(AYMR.strings.pref_google_drive_sign_out))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSignOutDialog = false }) {
+                        Text(stringResource(MR.strings.action_cancel))
+                    }
+                },
+            )
+        }
+
+        return Preference.PreferenceGroup(
+            title = stringResource(AYMR.strings.cloud_sync),
+            preferenceItems = persistentListOf(
+                // Google Drive sign in/out
+                Preference.PreferenceItem.TextPreference(
+                    title = stringResource(AYMR.strings.google_drive),
+                    subtitle = if (isSignedIn) {
+                        val email = remember(googleDriveEmail) { googleDriveEmail }
+                        if (email.isNotBlank()) {
+                            stringResource(AYMR.strings.pref_google_drive_connected, email)
+                        } else {
+                            stringResource(AYMR.strings.google_drive_login_success)
+                        }
+                    } else {
+                        stringResource(AYMR.strings.google_drive_not_signed_in)
+                    },
+                    icon = Icons.Outlined.Cloud,
+                    onClick = if (isSignedIn) {
+                        null
+                    } else {
+                        {
+                            // Sign in
+                            try {
+                                val intent = googleDriveService.getSignInIntent()
+                                signInLauncher.launch(intent)
+                            } catch (e: Exception) {
+                                context.toast(
+                                    context.stringResource(
+                                        AYMR.strings.google_drive_login_failed,
+                                        e.message ?: "Google Drive OAuth credentials are not configured",
+                                    ),
+                                )
+                            }
+                        }
+                    },
+                    widget = if (isSignedIn) {
+                        {
+                            TextButton(
+                                onClick = {
+                                    showSignOutDialog = true
+                                },
+                            ) {
+                                Text(stringResource(AYMR.strings.pref_google_drive_sign_out))
+                            }
+                        }
+                    } else {
+                        null
+                    },
+                ),
+
+                // Enable/disable sync toggle
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = cloudSyncEnabledPref,
+                    title = stringResource(AYMR.strings.pref_cloud_sync),
+                    subtitle = if (syncService == SyncPreferences.SYNC_SERVICE_GOOGLE_DRIVE) {
+                        stringResource(MR.strings.on)
+                    } else {
+                        stringResource(MR.strings.off)
+                    },
+                    icon = Icons.Outlined.Backup,
+                    enabled = isSignedIn,
+                    onValueChanged = { enabled ->
+                        if (enabled) {
+                            syncPreferences.syncService().set(SyncPreferences.SYNC_SERVICE_GOOGLE_DRIVE)
+                            SyncJob.setupTask(context)
+                        } else {
+                            syncPreferences.syncService().set(SyncPreferences.SYNC_SERVICE_NONE)
+                            SyncJob.setupTask(context, 0)
+                        }
+                        true
+                    },
+                ),
+
+                // Auto Sync Interval selection
+                Preference.PreferenceItem.ListPreference(
+                    preference = syncPreferences.syncInterval(),
+                    entries = persistentMapOf(
+                        0 to stringResource(MR.strings.off),
+                        6 to stringResource(MR.strings.update_6hour),
+                        12 to stringResource(MR.strings.update_12hour),
+                        24 to stringResource(MR.strings.update_24hour),
+                        48 to stringResource(MR.strings.update_48hour),
+                        168 to stringResource(MR.strings.update_weekly),
+                    ),
+                    title = stringResource(AYMR.strings.pref_sync_interval),
+                    icon = Icons.Outlined.Sync,
+                    enabled = isSignedIn && syncService == SyncPreferences.SYNC_SERVICE_GOOGLE_DRIVE,
+                    onValueChanged = {
+                        SyncJob.setupTask(context, it)
+                        true
+                    },
+                ),
+
+                // Cloud Sync Options
+                Preference.PreferenceItem.TextPreference(
+                    title = stringResource(AYMR.strings.pref_cloud_sync_options),
+                    subtitle = stringResource(AYMR.strings.pref_cloud_sync_options_summary),
+                    icon = Icons.Outlined.Settings,
+                    enabled = isSignedIn && syncService == SyncPreferences.SYNC_SERVICE_GOOGLE_DRIVE,
+                    onClick = {
+                        navigator.push(CloudSyncOptionsScreen())
+                    },
+                ),
+
+                // Sync now button
+                Preference.PreferenceItem.TextPreference(
+                    title = stringResource(AYMR.strings.pref_sync_now),
+                    subtitle = if (lastSyncTimestamp > 0) {
+                        stringResource(AYMR.strings.pref_last_sync) + ": " + relativeTimeSpanString(lastSyncTimestamp)
+                    } else {
+                        stringResource(AYMR.strings.never)
+                    },
+                    icon = Icons.Outlined.Sync,
+                    enabled = isSignedIn && syncService == SyncPreferences.SYNC_SERVICE_GOOGLE_DRIVE,
+                    onClick = {
+                        context.toast(AYMR.strings.pref_sync_started)
+                        scope.launchNonCancellable {
+                            try {
+                                val syncManager = SyncManager(context)
+                                syncManager.syncData(showUserNotification = true, rethrowErrors = true)
+                                withUIContext {
+                                    context.toast(AYMR.strings.cloud_sync_successful)
+                                }
+                            } catch (e: CancellationException) {
+                                logcat { "Sync cancelled" }
+                            } catch (e: Exception) {
+                                logcat { "Sync error: ${e.message}" }
+                                withUIContext {
+                                    context.toast(
+                                        context.stringResource(
+                                            AYMR.strings.cloud_sync_error,
+                                            e.message ?: "Unknown error",
+                                        ),
+                                    )
+                                }
+                            }
+                        }
+                    },
+                ),
+
+                // Delete sync data
+                Preference.PreferenceItem.TextPreference(
+                    title = stringResource(AYMR.strings.pref_google_drive_purge_sync_data),
+                    icon = Icons.Outlined.Delete,
+                    enabled = isSignedIn,
+                    onClick = {
+                        showPurgeDialog = true
+                    },
+                ),
+            ),
+        )
+    }
+
+    @Composable
+    private fun getExportGroup(): Preference.PreferenceGroup {
+        var showDialog by remember { mutableStateOf(false) }
+        var exportOptions by remember {
+            mutableStateOf(
+                ExportOptions(
+                    includeTitle = true,
+                    includeType = true,
+                    includeAuthor = true,
+                    includeArtist = true,
+                ),
+            )
+        }
+
+        val context = LocalContext.current
+        val scope = rememberCoroutineScope()
+
+        val getAnimeFavorites = remember { Injekt.get<GetAnimeFavorites>() }
+        val getMangaFavorites = remember { Injekt.get<GetMangaFavorites>() }
+        val getNovelFavorites = remember { Injekt.get<GetNovelFavorites>() }
+
+        var favorites by remember { mutableStateOf<List<ExportEntry>>(emptyList()) }
+        LaunchedEffect(Unit) {
+            favorites = getAnimeFavorites.await().map { it.toExportEntry() } +
+                getMangaFavorites.await().map { it.toExportEntry() } +
+                getNovelFavorites.await().map { it.toExportEntry() }
+        }
+
+        val saveFileLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument("text/csv"),
+        ) { uri ->
+            uri?.let {
+                scope.launch {
+                    LibraryExporter.exportToCsv(
+                        context = context,
+                        uri = it,
+                        favorites = favorites,
+                        options = exportOptions,
+                        onExportComplete = {
+                            scope.launch(Dispatchers.Main) {
+                                context.toast(MR.strings.library_exported)
+                            }
+                        },
+                    )
+                }
+            }
+        }
+
+        if (showDialog) {
+            ColumnSelectionDialog(
+                options = exportOptions,
+                onConfirm = { options ->
+                    exportOptions = options
+                    saveFileLauncher.launch("aniyomi_library.csv")
+                },
+                onDismissRequest = { showDialog = false },
+            )
+        }
+
+        return Preference.PreferenceGroup(
+            title = stringResource(MR.strings.export),
+            preferenceItems = persistentListOf(
+                Preference.PreferenceItem.TextPreference(
+                    title = stringResource(MR.strings.library_list),
+                    onClick = { showDialog = true },
+                ),
+            ),
+        )
+    }
+
+    @Composable
+    private fun ColumnSelectionDialog(
+        options: ExportOptions,
+        onConfirm: (ExportOptions) -> Unit,
+        onDismissRequest: () -> Unit,
+    ) {
+        var titleSelected by remember { mutableStateOf(options.includeTitle) }
+        var typeSelected by remember { mutableStateOf(options.includeType) }
+        var authorSelected by remember { mutableStateOf(options.includeAuthor) }
+        var artistSelected by remember { mutableStateOf(options.includeArtist) }
+
+        AlertDialog(
+            onDismissRequest = onDismissRequest,
+            title = {
+                Text(text = stringResource(MR.strings.migration_dialog_what_to_include))
+            },
+            text = {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = titleSelected,
+                            onCheckedChange = { checked ->
+                                titleSelected = checked
+                                if (!checked) {
+                                    authorSelected = false
+                                    artistSelected = false
+                                    typeSelected = false
+                                }
+                            },
+                        )
+                        Text(text = stringResource(MR.strings.title))
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = typeSelected,
+                            onCheckedChange = { typeSelected = it },
+                            enabled = titleSelected,
+                        )
+                        Text(text = stringResource(AYMR.strings.type))
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = authorSelected,
+                            onCheckedChange = { authorSelected = it },
+                            enabled = titleSelected,
+                        )
+                        Text(text = stringResource(MR.strings.author))
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = artistSelected,
+                            onCheckedChange = { artistSelected = it },
+                            enabled = titleSelected,
+                        )
+                        Text(text = stringResource(MR.strings.artist))
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onConfirm(
+                            ExportOptions(
+                                includeTitle = titleSelected,
+                                includeType = typeSelected,
+                                includeAuthor = authorSelected,
+                                includeArtist = artistSelected,
+                            ),
+                        )
+                        onDismissRequest()
+                    },
+                ) {
+                    Text(text = stringResource(MR.strings.action_save))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismissRequest) {
+                    Text(text = stringResource(MR.strings.action_cancel))
+                }
+            },
+        )
+    }
+
+    @Composable
+    private fun cloudBackupSubtitle(
+        context: Context,
+        backupPreferences: BackupPreferences,
+    ): String {
+        val uri by backupPreferences.cloudBackupUri().collectAsState()
+        if (uri.isBlank()) {
+            return stringResource(MR.strings.cloud_backup_folder_not_set)
+        }
+        val displayPath = remember(uri) {
+            UniFile.fromUri(context, uri.toUri())?.displayablePath
+        }
+        return displayPath ?: stringResource(MR.strings.invalid_location, uri)
+    }
+}

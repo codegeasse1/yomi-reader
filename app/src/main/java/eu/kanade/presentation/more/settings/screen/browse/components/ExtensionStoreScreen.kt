@@ -1,0 +1,72 @@
+@file:JvmName("ExtensionStoreScreenKt")
+
+package eu.kanade.presentation.more.settings.screen.browse.components
+
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import eu.kanade.presentation.category.components.CategoryFloatingActionButton
+import eu.kanade.presentation.more.settings.SettingsScaffold
+import eu.kanade.presentation.more.settings.canScroll
+import eu.kanade.presentation.more.settings.rememberResolvedSettingsUiStyle
+import eu.kanade.presentation.more.settings.screen.browse.RepoScreenState
+import mihon.domain.extensionrepo.model.ExtensionRepo
+import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.components.material.padding
+import tachiyomi.presentation.core.components.material.topSmallPaddingValues
+import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.presentation.core.util.plus
+
+@Composable
+fun ExtensionStoreScreen(
+    state: RepoScreenState.Success,
+    onClickCreate: () -> Unit,
+    onAddRepo: (String) -> Unit,
+    onOpenWebsite: (ExtensionRepo) -> Unit,
+    onClickDelete: (String) -> Unit,
+    onClickRename: (ExtensionRepo) -> Unit,
+    onClickRefresh: () -> Unit,
+    navigateUp: () -> Unit,
+    officialRepos: Map<String, String> = emptyMap(),
+) {
+    val lazyListState = rememberLazyListState()
+    val uiStyle = rememberResolvedSettingsUiStyle()
+    SettingsScaffold(
+        title = stringResource(MR.strings.label_extension_stores),
+        uiStyle = uiStyle,
+        onBackPressed = navigateUp,
+        topBarCanScroll = { lazyListState.canScroll() },
+        actions = {
+            IconButton(onClick = onClickRefresh) {
+                Icon(
+                    imageVector = Icons.Outlined.Refresh,
+                    contentDescription = stringResource(resource = MR.strings.action_webview_refresh),
+                )
+            }
+        },
+        floatingActionButton = {
+            CategoryFloatingActionButton(
+                lazyListState = lazyListState,
+                onCreate = onClickCreate,
+            )
+        },
+    ) { paddingValues ->
+        ExtensionStoreContent(
+            repos = state.repos,
+            lazyListState = lazyListState,
+            paddingValues = paddingValues + topSmallPaddingValues +
+                PaddingValues(horizontal = MaterialTheme.padding.medium),
+            onOpenWebsite = onOpenWebsite,
+            onClickDelete = onClickDelete,
+            onClickRename = onClickRename,
+            onAddRepo = onAddRepo,
+            officialRepos = officialRepos,
+        )
+    }
+}

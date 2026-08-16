@@ -1,0 +1,4 @@
+-- The library view joins animes_categories to find the display category per anime.
+-- The junction table had no index on anime_id, so every library query (which re-runs on
+-- any write to animes/episodes/history/categories) did a full table scan of the junction.
+CREATE INDEX IF NOT EXISTS animes_categories_anime_id_index ON animes_categories(anime_id);

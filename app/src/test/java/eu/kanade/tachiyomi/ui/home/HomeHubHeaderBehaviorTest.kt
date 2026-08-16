@@ -1,0 +1,303 @@
+package eu.kanade.tachiyomi.ui.home
+
+import io.kotest.matchers.shouldBe
+import org.junit.jupiter.api.Test
+import tachiyomi.domain.achievement.model.ActivityType
+import tachiyomi.domain.achievement.model.DayActivity
+import java.time.LocalDate
+
+class HomeHubHeaderBehaviorTest {
+
+    @Test
+    fun `resolveHomeHubScrollDirectionFromDelta returns down for negative delta`() {
+        resolveHomeHubScrollDirectionFromDelta(deltaY = -5f) shouldBe HomeHubScrollDirection.Down
+    }
+
+    @Test
+    fun `resolveHomeHubScrollDirectionFromDelta returns up for positive delta`() {
+        resolveHomeHubScrollDirectionFromDelta(deltaY = 6f) shouldBe HomeHubScrollDirection.Up
+    }
+
+    @Test
+    fun `resolveHomeHubScrollDirectionFromDelta returns idle for small delta`() {
+        resolveHomeHubScrollDirectionFromDelta(deltaY = 0.2f) shouldBe HomeHubScrollDirection.Idle
+    }
+
+    @Test
+    fun `resolveHomeHubScrollDirection returns down when offset increases`() {
+        resolveHomeHubScrollDirection(
+            previous = HomeHubScrollSnapshot(index = 0, offset = 10),
+            current = HomeHubScrollSnapshot(index = 0, offset = 20),
+        ) shouldBe HomeHubScrollDirection.Down
+    }
+
+    @Test
+    fun `resolveHomeHubScrollDirection returns up when offset decreases`() {
+        resolveHomeHubScrollDirection(
+            previous = HomeHubScrollSnapshot(index = 0, offset = 20),
+            current = HomeHubScrollSnapshot(index = 0, offset = 10),
+        ) shouldBe HomeHubScrollDirection.Up
+    }
+
+    @Test
+    fun `resolveHomeHubScrollDirection returns down when index increases`() {
+        resolveHomeHubScrollDirection(
+            previous = HomeHubScrollSnapshot(index = 0, offset = 50),
+            current = HomeHubScrollSnapshot(index = 1, offset = 0),
+        ) shouldBe HomeHubScrollDirection.Down
+    }
+
+    @Test
+    fun `resolveHomeHubHeaderOffset increases offset when scrolling down`() {
+        resolveHomeHubHeaderOffset(
+            currentOffsetPx = 10f,
+            deltaY = -12f,
+            maxOffsetPx = 80f,
+            isAtTop = false,
+        ) shouldBe 22f
+    }
+
+    @Test
+    fun `resolveHomeHubHeaderOffset decreases offset when scrolling up`() {
+        resolveHomeHubHeaderOffset(
+            currentOffsetPx = 30f,
+            deltaY = 8f,
+            maxOffsetPx = 80f,
+            isAtTop = false,
+        ) shouldBe 22f
+    }
+
+    @Test
+    fun `resolveHomeHubHeaderOffset clamps result within range`() {
+        resolveHomeHubHeaderOffset(
+            currentOffsetPx = 70f,
+            deltaY = -30f,
+            maxOffsetPx = 80f,
+            isAtTop = false,
+        ) shouldBe 80f
+    }
+
+    @Test
+    fun `resolveHomeHubHeaderOffset resets to zero at top`() {
+        resolveHomeHubHeaderOffset(
+            currentOffsetPx = 50f,
+            deltaY = -20f,
+            maxOffsetPx = 80f,
+            isAtTop = true,
+        ) shouldBe 0f
+    }
+
+    @Test
+    fun `resolveHomeHubHeaderVisibility keeps header visible at top`() {
+        resolveHomeHubHeaderVisibility(
+            currentlyVisible = false,
+            direction = HomeHubScrollDirection.Down,
+            isAtTop = true,
+        ) shouldBe true
+    }
+
+    @Test
+    fun `resolveHomeHubHeaderVisibility hides header on downward scroll`() {
+        resolveHomeHubHeaderVisibility(
+            currentlyVisible = true,
+            direction = HomeHubScrollDirection.Down,
+            isAtTop = false,
+        ) shouldBe false
+    }
+
+    @Test
+    fun `resolveHomeHubHeaderVisibility shows header on upward scroll`() {
+        resolveHomeHubHeaderVisibility(
+            currentlyVisible = false,
+            direction = HomeHubScrollDirection.Up,
+            isAtTop = false,
+        ) shouldBe true
+    }
+
+    @Test
+    fun `resolveHomeHubHeaderVisibility preserves state when scroll idle`() {
+        resolveHomeHubHeaderVisibility(
+            currentlyVisible = false,
+            direction = HomeHubScrollDirection.Idle,
+            isAtTop = false,
+        ) shouldBe false
+    }
+
+    @Test
+    fun `shouldResetHomeHubScroll returns true on section change`() {
+        shouldResetHomeHubScroll(previousPage = 0, currentPage = 1) shouldBe true
+    }
+
+    @Test
+    fun `shouldResetHomeHubScroll returns false on same section`() {
+        shouldResetHomeHubScroll(previousPage = 1, currentPage = 1) shouldBe false
+    }
+
+    @Test
+    fun `calculateHomeOpenStreak counts today and yesterday when both active`() {
+        val today = LocalDate.now()
+        val activities = listOf(
+            DayActivity(date = today.minusDays(2), level = 0, type = ActivityType.APP_OPEN),
+            DayActivity(date = today.minusDays(1), level = 1, type = ActivityType.APP_OPEN),
+            DayActivity(date = today, level = 1, type = ActivityType.APP_OPEN),
+        )
+
+        calculateHomeOpenStreak(activities) shouldBe 2
+    }
+
+    @Test
+    fun `calculateHomeOpenStreak starts from yesterday when today has no activity`() {
+        val today = LocalDate.now()
+        val activities = listOf(
+            DayActivity(date = today.minusDays(2), level = 0, type = ActivityType.APP_OPEN),
+            DayActivity(date = today.minusDays(1), level = 1, type = ActivityType.APP_OPEN),
+            DayActivity(date = today, level = 0, type = ActivityType.APP_OPEN),
+        )
+
+        calculateHomeOpenStreak(activities) shouldBe 1
+    }
+
+    @Test
+    fun `calculateHomeOpenStreak returns zero when yesterday and today are inactive`() {
+        val today = LocalDate.now()
+        val activities = listOf(
+            DayActivity(date = today.minusDays(1), level = 0, type = ActivityType.APP_OPEN),
+            DayActivity(date = today, level = 0, type = ActivityType.APP_OPEN),
+        )
+
+        calculateHomeOpenStreak(activities) shouldBe 0
+    }
+
+    @Test
+    fun `calculateHomeOpenStreak returns zero for empty input`() {
+        calculateHomeOpenStreak(emptyList()) shouldBe 0
+    }
+
+    @Test
+    fun `shouldShowNicknameEditHint returns true for default untouched nickname`() {
+        shouldShowNicknameEditHint(
+            currentName = "",
+            isNameEdited = false,
+        ) shouldBe true
+    }
+
+    @Test
+    fun `shouldShowNicknameEditHint returns false after nickname change`() {
+        shouldShowNicknameEditHint(
+            currentName = "MyName",
+            isNameEdited = true,
+        ) shouldBe false
+    }
+
+    @Test
+    fun `shouldShowNicknameEditHint returns false for custom name even without edit flag`() {
+        shouldShowNicknameEditHint(
+            currentName = "Custom",
+            isNameEdited = false,
+        ) shouldBe false
+    }
+
+    @Test
+    fun `shouldFillNicknameRowSpace returns false when edit hint is visible`() {
+        shouldFillNicknameRowSpace(showNameEditHint = true) shouldBe false
+    }
+
+    @Test
+    fun `shouldFillNicknameRowSpace returns true when edit hint is hidden`() {
+        shouldFillNicknameRowSpace(showNameEditHint = false) shouldBe true
+    }
+
+    @Test
+    fun `decorateGreetingText wraps non-empty greeting with custom markers`() {
+        val decorated = decorateGreetingText("Привет, мир")
+
+        decorated.contains("Привет, мир") shouldBe true
+        decorated shouldBe decorated.trim()
+        (decorated != "Привет, мир") shouldBe true
+    }
+
+    @Test
+    fun `decorateGreetingText keeps blank greeting unchanged`() {
+        decorateGreetingText("   ") shouldBe "   "
+    }
+
+    @Test
+    fun `decorateGreetingText with no decoration returns trimmed text`() {
+        decorateGreetingText("  Hello there  ", GreetingDecorationPreset.None) shouldBe "Hello there"
+    }
+
+    @Test
+    fun `decorateGreetingText with sparkle decoration wraps greeting`() {
+        decorateGreetingText("Hello", GreetingDecorationPreset.Sparkle) shouldBe "✦ Hello ✦"
+    }
+
+    @Test
+    fun `resolveHomeHubHeaderTintAlpha returns expected dark value`() {
+        resolveHomeHubHeaderTintAlpha(isDarkTheme = true) shouldBe 0.12f
+    }
+
+    @Test
+    fun `resolveHomeHubHeaderTintAlpha returns expected light value`() {
+        resolveHomeHubHeaderTintAlpha(isDarkTheme = false) shouldBe 0.06f
+    }
+
+    @Test
+    fun `resolveHomeHubHeaderTintSecondaryAlpha scales down primary alpha`() {
+        resolveHomeHubHeaderTintSecondaryAlpha(primaryAlpha = 0.12f) shouldBe 0.06f
+    }
+
+    @Test
+    fun `resolveHomeHubProfileSection returns selected section when it exists`() {
+        resolveHomeHubProfileSection(
+            sections = listOf(HomeHubSection.Anime, HomeHubSection.Manga, HomeHubSection.Novel),
+            selectedSection = HomeHubSection.Novel,
+        ) shouldBe HomeHubSection.Novel
+    }
+
+    @Test
+    fun `resolveHomeHubProfileSection falls back to first section when selected is missing`() {
+        resolveHomeHubProfileSection(
+            sections = listOf(HomeHubSection.Manga, HomeHubSection.Novel),
+            selectedSection = HomeHubSection.Anime,
+        ) shouldBe HomeHubSection.Manga
+    }
+
+    @Test
+    fun `resolveHomeHubSectionIndex returns selected index`() {
+        resolveHomeHubSectionIndex(
+            sections = listOf(HomeHubSection.Anime, HomeHubSection.Manga, HomeHubSection.Novel),
+            section = HomeHubSection.Manga,
+        ) shouldBe 1
+    }
+
+    @Test
+    fun `resolveHomeHubSectionIndex falls back to first index when selected is missing`() {
+        resolveHomeHubSectionIndex(
+            sections = listOf(HomeHubSection.Manga, HomeHubSection.Novel),
+            section = HomeHubSection.Anime,
+        ) shouldBe 0
+    }
+
+    @Test
+    fun `shouldSwitchHomeHubSection returns true for valid different index`() {
+        shouldSwitchHomeHubSection(
+            currentIndex = 0,
+            targetIndex = 2,
+            lastIndex = 2,
+        ) shouldBe true
+    }
+
+    @Test
+    fun `shouldSwitchHomeHubSection returns false for same or invalid index`() {
+        shouldSwitchHomeHubSection(
+            currentIndex = 1,
+            targetIndex = 1,
+            lastIndex = 2,
+        ) shouldBe false
+        shouldSwitchHomeHubSection(
+            currentIndex = 1,
+            targetIndex = 3,
+            lastIndex = 2,
+        ) shouldBe false
+    }
+}

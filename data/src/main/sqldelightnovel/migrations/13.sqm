@@ -1,0 +1,5 @@
+ALTER TABLE novels ADD COLUMN custom_title TEXT;
+ALTER TABLE novels ADD COLUMN custom_author TEXT;
+ALTER TABLE novels ADD COLUMN custom_description TEXT;
+ALTER TABLE novels ADD COLUMN custom_genre TEXT;
+ALTER TABLE novels ADD COLUMN custom_status INTEGER;

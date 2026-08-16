@@ -1,0 +1,87 @@
+package eu.kanade.tachiyomi.ui.reader.novel.translation
+
+import io.kotest.matchers.shouldBe
+import org.junit.jupiter.api.Test
+
+class GeminiXmlSegmentParserTest {
+
+    @Test
+    fun `parses ordered xml segments by explicit index`() {
+        val raw = "<s i='1'>Beta</s><s i='0'>Alpha</s><s i='2'>Gamma</s>"
+
+        val parsed = GeminiXmlSegmentParser.parse(raw, expectedCount = 3)
+
+        parsed.size shouldBe 3
+        parsed[0] shouldBe "Alpha"
+        parsed[1] shouldBe "Beta"
+        parsed[2] shouldBe "Gamma"
+    }
+
+    @Test
+    fun `unescapes html entities like quot and apos when tags are not escaped`() {
+        val raw = "<s i='0'>Hello, &quot;world&quot;!</s><s i='1'>It&#39;s beautiful</s>"
+
+        val parsed = GeminiXmlSegmentParser.parse(raw, expectedCount = 2)
+
+        parsed shouldBe listOf("Hello, \"world\"!", "It's beautiful")
+    }
+
+    @Test
+    fun `fills missing indexes with null`() {
+        val raw = "<s i='0'>First</s><s i='2'>Third</s>"
+
+        val parsed = GeminiXmlSegmentParser.parse(raw, expectedCount = 3)
+
+        parsed shouldBe listOf("First", null, "Third")
+    }
+
+    @Test
+    fun `strips markdown fences around xml payload`() {
+        val raw = "```xml\n<s i='0'>One</s>\n<s i='1'>Two</s>\n```"
+
+        val parsed = GeminiXmlSegmentParser.parse(raw, expectedCount = 2)
+
+        parsed shouldBe listOf("One", "Two")
+    }
+
+    @Test
+    fun `parses full plaintext response for python like mode`() {
+        val raw = """
+            First paragraph
+
+            Second paragraph
+        """.trimIndent()
+
+        val parsed = GeminiXmlSegmentParser.parsePlaintext(raw, expectedCount = 2)
+
+        parsed shouldBe listOf("First paragraph", "Second paragraph")
+    }
+
+    @Test
+    fun `merges overflow plaintext paragraphs into last segment`() {
+        val raw = """
+            One
+
+            Two
+
+            Three
+        """.trimIndent()
+
+        val parsed = GeminiXmlSegmentParser.parsePlaintext(raw, expectedCount = 2)
+
+        parsed shouldBe listOf("One", "Two\n\nThree")
+    }
+
+    @Test
+    fun `removes emoji in python like plaintext mode without leaving gaps`() {
+        val raw = """
+            Hello 😊 world
+
+            Second 🚀 paragraph 😈
+        """.trimIndent()
+
+        val parsed = GeminiXmlSegmentParser.parsePlaintext(raw, expectedCount = 2)
+
+        parsed shouldBe listOf("Hello world", "Second paragraph")
+    }
+}

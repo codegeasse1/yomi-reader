@@ -1,0 +1,738 @@
+package eu.kanade.tachiyomi.ui.reader.novel.setting
+
+import eu.kanade.tachiyomi.data.download.novel.NovelTranslatedDownloadFormat
+import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.Json
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import tachiyomi.core.common.preference.Preference
+import tachiyomi.core.common.preference.PreferenceStore
+
+class NovelReaderPreferencesTest {
+
+    @BeforeEach
+    fun setup() {
+        Dispatchers.setMain(Dispatchers.Unconfined)
+    }
+
+    @AfterEach
+    fun teardown() {
+        Dispatchers.resetMain()
+    }
+
+    private fun createPrefs(): NovelReaderPreferences {
+        return NovelReaderPreferences(
+            preferenceStore = FakePreferenceStore(),
+            json = Json { encodeDefaults = true },
+        )
+    }
+
+    @Test
+    fun `defaults include lnreader parity options`() {
+        val prefs = createPrefs()
+
+        prefs.textAlign().get() shouldBe TextAlign.SOURCE
+        prefs.preferWebViewRenderer().get() shouldBe false
+        prefs.richNativeRendererExperimental().get() shouldBe true
+        prefs.pageTransitionStyle().get() shouldBe NovelPageTransitionStyle.SLIDE
+        prefs.bookFlipAnimationSpeed().get() shouldBe NovelBookFlipAnimationSpeed.SLOW
+        prefs.forceParagraphIndent().get() shouldBe true
+        prefs.preserveSourceTextAlignInNative().get() shouldBe true
+        prefs.paragraphSpacing().get() shouldBe 12
+        prefs.showScrollPercentage().get() shouldBe true
+        prefs.showBatteryAndTime().get() shouldBe false
+        prefs.showKindleInfoBlock().get() shouldBe true
+        prefs.showTimeToEnd().get() shouldBe true
+        prefs.showWordCount().get() shouldBe true
+        prefs.backgroundTexture().get() shouldBe NovelReaderBackgroundTexture.PAPER_GRAIN
+        prefs.nativeTextureStrengthPercent().get() shouldBe 50
+        prefs.appearanceMode().get() shouldBe NovelReaderAppearanceMode.THEME
+        prefs.backgroundSource().get() shouldBe NovelReaderBackgroundSource.PRESET
+        prefs.backgroundPresetId().get() shouldBe "linen_paper"
+        prefs.customBackgroundPath().get() shouldBe ""
+        prefs.customBackgroundId().get() shouldBe ""
+        prefs.oledEdgeGradient().get() shouldBe false
+        prefs.verticalSeekbar().get() shouldBe true
+        prefs.swipeToNextChapter().get() shouldBe false
+        prefs.swipeToPrevChapter().get() shouldBe false
+        prefs.tapToScroll().get() shouldBe true
+        prefs.autoScroll().get() shouldBe false
+        prefs.autoScrollInterval().get() shouldBe 10
+        prefs.autoScrollOffset().get() shouldBe 0
+        // Enabled by default so seamless chapter transitions have the next chapter warmed up.
+        prefs.prefetchNextChapter().get() shouldBe true
+        prefs.cacheReadChapters().get() shouldBe true
+        prefs.cacheReadChaptersUnlimited().get() shouldBe false
+        prefs.bionicReading().get() shouldBe false
+        prefs.swipeGestures().get() shouldBe false
+        prefs.customThemes().get() shouldBe emptyList()
+        prefs.geminiEnabled().get() shouldBe false
+        prefs.geminiPromptMode().get() shouldBe GeminiPromptMode.ADULT_18
+        prefs.geminiModel().get() shouldBe "gemini-3.1-flash-lite-preview"
+        prefs.pageTurnSpeed().get() shouldBe NovelPageTurnSpeed.NORMAL
+        prefs.pageTurnIntensity().get() shouldBe NovelPageTurnIntensity.MEDIUM
+        prefs.pageTurnShadowIntensity().get() shouldBe NovelPageTurnShadowIntensity.MEDIUM
+        prefs.pageTurnActivationZone().get() shouldBe NovelPageTurnActivationZone.WIDE
+        prefs.geminiTemperature().get() shouldBe 0.7f
+        prefs.geminiReasoningEffort().get() shouldBe "minimal"
+        prefs.geminiBudgetTokens().get() shouldBe 8192
+        prefs.geminiTopP().get() shouldBe 0.95f
+        prefs.geminiTopK().get() shouldBe 40
+        prefs.geminiAutoTranslateEnglishSource().get() shouldBe false
+        prefs.geminiPrefetchNextChapterTranslation().get() shouldBe false
+        prefs.geminiStylePreset().get() shouldBe NovelTranslationStylePreset.PROFESSIONAL
+        prefs.selectedTextTranslationEnabled().get() shouldBe false
+        prefs.selectedTextTranslationTargetLanguage().get() shouldBe "ru"
+        prefs.translationProvider().get() shouldBe NovelTranslationProvider.GEMINI
+        prefs.openRouterBaseUrl().get() shouldBe "https://openrouter.ai/api/v1"
+        prefs.openRouterApiKey().get() shouldBe ""
+        prefs.openRouterModel().get() shouldBe ""
+        prefs.deepSeekBaseUrl().get() shouldBe "https://api.deepseek.com"
+        prefs.deepSeekApiKey().get() shouldBe ""
+        prefs.deepSeekModel().get() shouldBe "deepseek-chat"
+    }
+
+    @Test
+    fun `translated download format defaults to txt per novel`() {
+        val prefs = createPrefs()
+
+        prefs.translatedDownloadFormat(1L) shouldBe NovelTranslatedDownloadFormat.TXT
+        prefs.translatedDownloadFormat(2L) shouldBe NovelTranslatedDownloadFormat.TXT
+    }
+
+    @Test
+    fun `translated download format is stored per novel`() {
+        val prefs = createPrefs()
+
+        prefs.setTranslatedDownloadFormat(1L, NovelTranslatedDownloadFormat.DOCX)
+        prefs.setTranslatedDownloadFormat(2L, NovelTranslatedDownloadFormat.TXT)
+
+        prefs.translatedDownloadFormat(1L) shouldBe NovelTranslatedDownloadFormat.DOCX
+        prefs.translatedDownloadFormat(2L) shouldBe NovelTranslatedDownloadFormat.TXT
+    }
+
+    @Test
+    fun `page transition style preference round trips persisted value`() {
+        val prefs = createPrefs()
+
+        prefs.pageTransitionStyle().set(NovelPageTransitionStyle.BOOK)
+
+        prefs.pageTransitionStyle().get() shouldBe NovelPageTransitionStyle.CURL
+    }
+
+    @Test
+    fun `legacy book transition style migrates to curl`() {
+        val prefs = createPrefs()
+
+        prefs.pageTransitionStyle().set(NovelPageTransitionStyle.BOOK)
+
+        prefs.migrateLegacyPageTransitionStyleIfNeeded()
+
+        prefs.pageTransitionStyle().get() shouldBe NovelPageTransitionStyle.CURL
+    }
+
+    @Test
+    fun `legacy book transition style in source overrides migrates to curl`() {
+        val prefs = createPrefs()
+        val sourceId = 123L
+
+        prefs.sourceOverrides().set(
+            mapOf(
+                sourceId to NovelReaderOverride(pageTransitionStyle = NovelPageTransitionStyle.BOOK),
+            ),
+        )
+
+        prefs.migrateLegacyPageTransitionStyleIfNeeded()
+
+        prefs.getSourceOverride(sourceId)?.pageTransitionStyle shouldBe NovelPageTransitionStyle.CURL
+    }
+
+    @Test
+    fun `page turn tuning preferences round trip persisted values`() {
+        val prefs = createPrefs()
+
+        prefs.pageTurnSpeed().set(NovelPageTurnSpeed.FAST)
+        prefs.pageTurnIntensity().set(NovelPageTurnIntensity.HIGH)
+        prefs.pageTurnShadowIntensity().set(NovelPageTurnShadowIntensity.LOW)
+        prefs.pageTurnActivationZone().set(NovelPageTurnActivationZone.NARROW)
+
+        prefs.pageTurnSpeed().get() shouldBe NovelPageTurnSpeed.FAST
+        prefs.pageTurnIntensity().get() shouldBe NovelPageTurnIntensity.HIGH
+        prefs.pageTurnShadowIntensity().get() shouldBe NovelPageTurnShadowIntensity.LOW
+        prefs.pageTurnActivationZone().get() shouldBe NovelPageTurnActivationZone.NARROW
+    }
+
+    @Test
+    fun `page turn tuning preferences round trip expanded boundary values`() {
+        val prefs = createPrefs()
+
+        prefs.pageTurnSpeed().set(NovelPageTurnSpeed.SLOWER)
+        prefs.pageTurnIntensity().set(NovelPageTurnIntensity.SOFTER)
+        prefs.pageTurnShadowIntensity().set(NovelPageTurnShadowIntensity.STRONGER)
+        prefs.pageTurnActivationZone().set(NovelPageTurnActivationZone.WIDER)
+
+        prefs.pageTurnSpeed().get() shouldBe NovelPageTurnSpeed.SLOWER
+        prefs.pageTurnIntensity().get() shouldBe NovelPageTurnIntensity.SOFTER
+        prefs.pageTurnShadowIntensity().get() shouldBe NovelPageTurnShadowIntensity.STRONGER
+        prefs.pageTurnActivationZone().get() shouldBe NovelPageTurnActivationZone.WIDER
+    }
+
+    @Test
+    fun `enable source override copies new settings`() {
+        val prefs = createPrefs()
+        val sourceId = 123L
+
+        prefs.showScrollPercentage().set(false)
+        prefs.showBatteryAndTime().set(true)
+        prefs.showKindleInfoBlock().set(false)
+        prefs.showTimeToEnd().set(false)
+        prefs.showWordCount().set(false)
+        prefs.backgroundTexture().set(NovelReaderBackgroundTexture.PARCHMENT)
+        prefs.nativeTextureStrengthPercent().set(120)
+        prefs.appearanceMode().set(NovelReaderAppearanceMode.BACKGROUND)
+        prefs.backgroundSource().set(NovelReaderBackgroundSource.CUSTOM)
+        prefs.backgroundPresetId().set("night_velvet")
+        prefs.customBackgroundPath().set("/data/user/0/test/custom.jpg")
+        prefs.customBackgroundId().set("custom-1")
+        prefs.oledEdgeGradient().set(false)
+        prefs.preferWebViewRenderer().set(false)
+        prefs.richNativeRendererExperimental().set(true)
+        prefs.forceParagraphIndent().set(true)
+        prefs.preserveSourceTextAlignInNative().set(false)
+        prefs.paragraphSpacing().set(24)
+        prefs.verticalSeekbar().set(false)
+        prefs.swipeToNextChapter().set(true)
+        prefs.swipeToPrevChapter().set(true)
+        prefs.tapToScroll().set(true)
+        prefs.autoScroll().set(true)
+        prefs.autoScrollInterval().set(7)
+        prefs.autoScrollOffset().set(480)
+        prefs.prefetchNextChapter().set(true)
+        prefs.pageTransitionStyle().set(NovelPageTransitionStyle.DEPTH)
+        prefs.pageTurnSpeed().set(NovelPageTurnSpeed.SLOW)
+        prefs.pageTurnIntensity().set(NovelPageTurnIntensity.LOW)
+        prefs.pageTurnShadowIntensity().set(NovelPageTurnShadowIntensity.HIGH)
+        prefs.pageTurnActivationZone().set(NovelPageTurnActivationZone.NARROWER)
+        prefs.bionicReading().set(true)
+        prefs.geminiApiKey().set("test-key")
+        prefs.geminiModel().set("gemini-2.5-pro")
+        prefs.geminiBatchSize().set(30)
+        prefs.geminiConcurrency().set(2)
+        prefs.geminiDisableCache().set(true)
+        prefs.geminiRelaxedMode().set(false)
+        prefs.geminiReasoningEffort().set("high")
+        prefs.geminiBudgetTokens().set(2048)
+        prefs.geminiTemperature().set(0.7f)
+        prefs.geminiTopP().set(0.85f)
+        prefs.geminiTopK().set(64)
+        prefs.geminiSourceLang().set("English")
+        prefs.geminiTargetLang().set("Russian")
+        prefs.geminiPromptMode().set(GeminiPromptMode.ADULT_18)
+        prefs.geminiStylePreset().set(NovelTranslationStylePreset.LITERARY)
+        prefs.geminiPromptModifiers().set("modifiers")
+        prefs.geminiAutoTranslateEnglishSource().set(true)
+        prefs.geminiPrefetchNextChapterTranslation().set(true)
+        prefs.selectedTextTranslationEnabled().set(false)
+        prefs.selectedTextTranslationTargetLanguage().set("English")
+        prefs.translationProvider().set(NovelTranslationProvider.GEMINI_PRIVATE)
+        prefs.bookFlipAnimationSpeed().set(NovelBookFlipAnimationSpeed.SLOW)
+        prefs.openRouterBaseUrl().set("https://openrouter.ai/api/v1")
+        prefs.openRouterApiKey().set("openrouter-key")
+        prefs.openRouterModel().set("google/gemma-3-27b-it:free")
+        prefs.deepSeekBaseUrl().set("https://api.deepseek.com")
+        prefs.deepSeekApiKey().set("deepseek-key")
+        prefs.deepSeekModel().set("deepseek-chat")
+        prefs.customThemes().set(
+            listOf(
+                NovelReaderColorTheme(backgroundColor = "#111111", textColor = "#eeeeee"),
+            ),
+        )
+
+        prefs.enableSourceOverride(sourceId)
+        val override = prefs.getSourceOverride(sourceId)
+
+        override?.showScrollPercentage shouldBe false
+        override?.showBatteryAndTime shouldBe true
+        override?.showKindleInfoBlock shouldBe false
+        override?.showTimeToEnd shouldBe false
+        override?.showWordCount shouldBe false
+        override?.backgroundTexture shouldBe NovelReaderBackgroundTexture.PARCHMENT
+        override?.nativeTextureStrengthPercent shouldBe 120
+        override?.appearanceMode shouldBe NovelReaderAppearanceMode.BACKGROUND
+        override?.backgroundSource shouldBe NovelReaderBackgroundSource.CUSTOM
+        override?.backgroundPresetId shouldBe "night_velvet"
+        override?.customBackgroundPath shouldBe "/data/user/0/test/custom.jpg"
+        override?.customBackgroundId shouldBe "custom-1"
+        override?.oledEdgeGradient shouldBe false
+        override?.preferWebViewRenderer shouldBe false
+        override?.richNativeRendererExperimental shouldBe true
+        override?.forceParagraphIndent shouldBe true
+        override?.preserveSourceTextAlignInNative shouldBe false
+        override?.paragraphSpacingDp shouldBe 24
+        override?.verticalSeekbar shouldBe false
+        override?.swipeToNextChapter shouldBe true
+        override?.swipeToPrevChapter shouldBe true
+        override?.tapToScroll shouldBe true
+        override?.autoScroll shouldBe true
+        override?.autoScrollInterval shouldBe 7
+        override?.autoScrollOffset shouldBe 480
+        override?.prefetchNextChapter shouldBe true
+        override?.pageTransitionStyle shouldBe NovelPageTransitionStyle.DEPTH
+        override?.bookFlipAnimationSpeed shouldBe NovelBookFlipAnimationSpeed.SLOW
+        override?.pageTurnSpeed shouldBe NovelPageTurnSpeed.SLOW
+        override?.pageTurnIntensity shouldBe NovelPageTurnIntensity.LOW
+        override?.pageTurnShadowIntensity shouldBe NovelPageTurnShadowIntensity.HIGH
+        override?.pageTurnActivationZone shouldBe NovelPageTurnActivationZone.NARROWER
+        override?.bionicReading shouldBe true
+        override?.geminiApiKey shouldBe "test-key"
+        override?.geminiModel shouldBe "gemini-2.5-pro"
+        override?.geminiBatchSize shouldBe 30
+        override?.geminiConcurrency shouldBe 2
+        override?.geminiDisableCache shouldBe true
+        override?.geminiRelaxedMode shouldBe false
+        override?.geminiReasoningEffort shouldBe "high"
+        override?.geminiBudgetTokens shouldBe 2048
+        override?.geminiTemperature shouldBe 0.7f
+        override?.geminiTopP shouldBe 0.85f
+        override?.geminiTopK shouldBe 64
+        override?.geminiSourceLang shouldBe "English"
+        override?.geminiTargetLang shouldBe "Russian"
+        override?.geminiPromptMode shouldBe GeminiPromptMode.ADULT_18
+        override?.geminiStylePreset shouldBe NovelTranslationStylePreset.LITERARY
+        override?.geminiPromptModifiers shouldBe "modifiers"
+        override?.geminiAutoTranslateEnglishSource shouldBe true
+        override?.geminiPrefetchNextChapterTranslation shouldBe true
+        override?.translationProvider shouldBe NovelTranslationProvider.GEMINI_PRIVATE
+        override?.openRouterBaseUrl shouldBe "https://openrouter.ai/api/v1"
+        override?.openRouterApiKey shouldBe "openrouter-key"
+        override?.openRouterModel shouldBe "google/gemma-3-27b-it:free"
+        override?.deepSeekBaseUrl shouldBe "https://api.deepseek.com"
+        override?.deepSeekApiKey shouldBe "deepseek-key"
+        override?.deepSeekModel shouldBe "deepseek-chat"
+        override?.customThemes shouldBe listOf(
+            NovelReaderColorTheme(backgroundColor = "#111111", textColor = "#eeeeee"),
+        )
+    }
+
+    @Test
+    fun `resolve settings prioritizes source override for new fields`() {
+        val prefs = createPrefs()
+        val sourceId = 42L
+
+        prefs.showScrollPercentage().set(true)
+        prefs.showBatteryAndTime().set(false)
+        prefs.showKindleInfoBlock().set(true)
+        prefs.showTimeToEnd().set(true)
+        prefs.showWordCount().set(true)
+        prefs.backgroundTexture().set(NovelReaderBackgroundTexture.PAPER_GRAIN)
+        prefs.nativeTextureStrengthPercent().set(40)
+        prefs.appearanceMode().set(NovelReaderAppearanceMode.THEME)
+        prefs.backgroundSource().set(NovelReaderBackgroundSource.PRESET)
+        prefs.backgroundPresetId().set("linen_paper")
+        prefs.customBackgroundPath().set("")
+        prefs.customBackgroundId().set("")
+        prefs.oledEdgeGradient().set(true)
+        prefs.preferWebViewRenderer().set(true)
+        prefs.richNativeRendererExperimental().set(false)
+        prefs.forceParagraphIndent().set(true)
+        prefs.preserveSourceTextAlignInNative().set(true)
+        prefs.paragraphSpacing().set(12)
+        prefs.verticalSeekbar().set(true)
+        prefs.swipeToNextChapter().set(false)
+        prefs.swipeToPrevChapter().set(false)
+        prefs.tapToScroll().set(false)
+        prefs.autoScroll().set(false)
+        prefs.autoScrollInterval().set(10)
+        prefs.autoScrollOffset().set(0)
+        prefs.prefetchNextChapter().set(false)
+        prefs.pageTransitionStyle().set(NovelPageTransitionStyle.SLIDE)
+        prefs.bookFlipAnimationSpeed().set(NovelBookFlipAnimationSpeed.FAST)
+        prefs.pageTurnSpeed().set(NovelPageTurnSpeed.NORMAL)
+        prefs.pageTurnIntensity().set(NovelPageTurnIntensity.MEDIUM)
+        prefs.pageTurnShadowIntensity().set(NovelPageTurnShadowIntensity.MEDIUM)
+        prefs.pageTurnActivationZone().set(NovelPageTurnActivationZone.WIDE)
+        prefs.bionicReading().set(false)
+        prefs.geminiApiKey().set("")
+        prefs.geminiModel().set("gemini-3.1-flash-lite-preview")
+        prefs.geminiBatchSize().set(40)
+        prefs.geminiConcurrency().set(2)
+        prefs.geminiDisableCache().set(false)
+        prefs.geminiRelaxedMode().set(true)
+        prefs.geminiReasoningEffort().set("low")
+        prefs.geminiBudgetTokens().set(4096)
+        prefs.geminiTemperature().set(0.9f)
+        prefs.geminiTopP().set(0.95f)
+        prefs.geminiTopK().set(40)
+        prefs.geminiSourceLang().set("English")
+        prefs.geminiTargetLang().set("Russian")
+        prefs.geminiPromptMode().set(GeminiPromptMode.CLASSIC)
+        prefs.geminiStylePreset().set(NovelTranslationStylePreset.MINIMAL)
+        prefs.geminiPromptModifiers().set("")
+        prefs.geminiAutoTranslateEnglishSource().set(false)
+        prefs.geminiPrefetchNextChapterTranslation().set(false)
+        prefs.selectedTextTranslationEnabled().set(false)
+        prefs.selectedTextTranslationTargetLanguage().set("English")
+        prefs.translationProvider().set(NovelTranslationProvider.GEMINI)
+        prefs.openRouterBaseUrl().set("https://openrouter.ai/api/v1")
+        prefs.openRouterApiKey().set("")
+        prefs.openRouterModel().set("")
+        prefs.deepSeekBaseUrl().set("https://api.deepseek.com")
+        prefs.deepSeekApiKey().set("")
+        prefs.deepSeekModel().set("deepseek-chat")
+        prefs.customThemes().set(
+            listOf(
+                NovelReaderColorTheme(backgroundColor = "#f5f5fa", textColor = "#111111"),
+            ),
+        )
+
+        prefs.setSourceOverride(
+            sourceId,
+            NovelReaderOverride(
+                showScrollPercentage = false,
+                showBatteryAndTime = true,
+                showKindleInfoBlock = false,
+                showTimeToEnd = false,
+                showWordCount = false,
+                backgroundTexture = NovelReaderBackgroundTexture.LINEN,
+                nativeTextureStrengthPercent = 135,
+                appearanceMode = NovelReaderAppearanceMode.BACKGROUND,
+                backgroundSource = NovelReaderBackgroundSource.CUSTOM,
+                backgroundPresetId = "dark_wood",
+                customBackgroundPath = "/data/user/0/test/override.jpg",
+                customBackgroundId = "custom-override-1",
+                oledEdgeGradient = false,
+                preferWebViewRenderer = false,
+                richNativeRendererExperimental = true,
+                forceParagraphIndent = false,
+                preserveSourceTextAlignInNative = false,
+                paragraphSpacingDp = 4,
+                verticalSeekbar = false,
+                swipeToNextChapter = true,
+                swipeToPrevChapter = true,
+                tapToScroll = true,
+                autoScroll = true,
+                autoScrollInterval = 3,
+                autoScrollOffset = 240,
+                prefetchNextChapter = true,
+                pageTransitionStyle = NovelPageTransitionStyle.CURL,
+                bookFlipAnimationSpeed = NovelBookFlipAnimationSpeed.SLOW,
+                pageTurnSpeed = NovelPageTurnSpeed.FAST,
+                pageTurnIntensity = NovelPageTurnIntensity.HIGH,
+                pageTurnShadowIntensity = NovelPageTurnShadowIntensity.LOW,
+                pageTurnActivationZone = NovelPageTurnActivationZone.WIDER,
+                bionicReading = true,
+                geminiApiKey = "override-key",
+                geminiModel = "gemini-2.5-pro",
+                geminiBatchSize = 20,
+                geminiConcurrency = 1,
+                geminiDisableCache = true,
+                geminiRelaxedMode = false,
+                geminiReasoningEffort = "medium",
+                geminiBudgetTokens = 1024,
+                geminiTemperature = 0.6f,
+                geminiTopP = 0.8f,
+                geminiTopK = 50,
+                geminiSourceLang = "Japanese",
+                geminiTargetLang = "Russian",
+                geminiPromptMode = GeminiPromptMode.ADULT_18,
+                geminiStylePreset = NovelTranslationStylePreset.VULGAR_18,
+                geminiPromptModifiers = "override-mod",
+                geminiAutoTranslateEnglishSource = true,
+                geminiPrefetchNextChapterTranslation = true,
+                translationProvider = NovelTranslationProvider.GEMINI_PRIVATE,
+                openRouterBaseUrl = "https://openrouter.ai/api/v1",
+                openRouterApiKey = "openrouter-key",
+                openRouterModel = "google/gemma-3-27b-it:free",
+                deepSeekBaseUrl = "https://api.deepseek.com",
+                deepSeekApiKey = "deepseek-key",
+                deepSeekModel = "deepseek-chat",
+                customThemes = listOf(
+                    NovelReaderColorTheme(backgroundColor = "#000000", textColor = "#ffffff"),
+                ),
+            ),
+        )
+
+        val settings = prefs.resolveSettings(sourceId)
+
+        settings.showScrollPercentage shouldBe false
+        settings.showBatteryAndTime shouldBe true
+        settings.showKindleInfoBlock shouldBe false
+        settings.showTimeToEnd shouldBe false
+        settings.showWordCount shouldBe false
+        settings.backgroundTexture shouldBe NovelReaderBackgroundTexture.LINEN
+        settings.nativeTextureStrengthPercent shouldBe 135
+        settings.appearanceMode shouldBe NovelReaderAppearanceMode.BACKGROUND
+        settings.backgroundSource shouldBe NovelReaderBackgroundSource.CUSTOM
+        settings.backgroundPresetId shouldBe "dark_wood"
+        settings.customBackgroundPath shouldBe "/data/user/0/test/override.jpg"
+        settings.customBackgroundId shouldBe "custom-override-1"
+        settings.oledEdgeGradient shouldBe false
+        settings.preferWebViewRenderer shouldBe false
+        settings.richNativeRendererExperimental shouldBe true
+        settings.forceParagraphIndent shouldBe false
+        settings.preserveSourceTextAlignInNative shouldBe false
+        settings.paragraphSpacing shouldBe 4
+        settings.verticalSeekbar shouldBe false
+        settings.swipeToNextChapter shouldBe true
+        settings.swipeToPrevChapter shouldBe true
+        settings.tapToScroll shouldBe true
+        settings.autoScroll shouldBe true
+        settings.autoScrollInterval shouldBe 3
+        settings.autoScrollOffset shouldBe 240
+        settings.prefetchNextChapter shouldBe true
+        settings.pageTransitionStyle shouldBe NovelPageTransitionStyle.CURL
+        settings.bookFlipAnimationSpeed shouldBe NovelBookFlipAnimationSpeed.SLOW
+        settings.pageTurnSpeed shouldBe NovelPageTurnSpeed.FAST
+        settings.pageTurnIntensity shouldBe NovelPageTurnIntensity.HIGH
+        settings.pageTurnShadowIntensity shouldBe NovelPageTurnShadowIntensity.LOW
+        settings.pageTurnActivationZone shouldBe NovelPageTurnActivationZone.WIDER
+        settings.bionicReading shouldBe true
+        settings.selectedTextTranslationEnabled shouldBe false
+        settings.selectedTextTranslationTargetLanguage shouldBe "English"
+        settings.geminiApiKey shouldBe "override-key"
+        settings.geminiModel shouldBe "gemini-2.5-pro"
+        settings.geminiBatchSize shouldBe 20
+        settings.geminiConcurrency shouldBe 1
+        settings.geminiDisableCache shouldBe true
+        settings.geminiRelaxedMode shouldBe false
+        settings.geminiReasoningEffort shouldBe "medium"
+        settings.geminiBudgetTokens shouldBe 1024
+        settings.geminiTemperature shouldBe 0.6f
+        settings.geminiTopP shouldBe 0.8f
+        settings.geminiTopK shouldBe 50
+        settings.geminiSourceLang shouldBe "Japanese"
+        settings.geminiTargetLang shouldBe "Russian"
+        settings.geminiPromptMode shouldBe GeminiPromptMode.ADULT_18
+        settings.geminiStylePreset shouldBe NovelTranslationStylePreset.VULGAR_18
+        settings.geminiPromptModifiers shouldBe "override-mod"
+        settings.geminiAutoTranslateEnglishSource shouldBe true
+        settings.geminiPrefetchNextChapterTranslation shouldBe true
+        settings.translationProvider shouldBe NovelTranslationProvider.GEMINI_PRIVATE
+        settings.openRouterBaseUrl shouldBe "https://openrouter.ai/api/v1"
+        settings.openRouterApiKey shouldBe "openrouter-key"
+        settings.openRouterModel shouldBe "google/gemma-3-27b-it:free"
+        settings.deepSeekBaseUrl shouldBe "https://api.deepseek.com"
+        settings.deepSeekApiKey shouldBe "deepseek-key"
+        settings.deepSeekModel shouldBe "deepseek-chat"
+        settings.customThemes shouldBe listOf(
+            NovelReaderColorTheme(backgroundColor = "#000000", textColor = "#ffffff"),
+        )
+    }
+
+    @Test
+    fun `legacy custom background path migrates to custom background id`() {
+        val prefs = createPrefs()
+        val legacyPath = "/data/user/0/test/legacy_custom.jpg"
+        prefs.customBackgroundPath().set(legacyPath)
+        prefs.customBackgroundId().set("")
+
+        prefs.migrateLegacyBackgroundSelectionIfNeeded()
+
+        prefs.customBackgroundId().get() shouldBe legacyPath
+    }
+
+    @Test
+    fun `settings flow skips duplicate emissions when source override masks global changes`() = runTest {
+        val prefs = createPrefs()
+        val sourceId = 123L
+        prefs.bookFlipAnimationSpeed().set(NovelBookFlipAnimationSpeed.NORMAL)
+        prefs.enableSourceOverride(sourceId)
+
+        val initialSettings = prefs.settingsFlow(sourceId).first()
+        initialSettings.bookFlipAnimationSpeed shouldBe NovelBookFlipAnimationSpeed.NORMAL
+        val collectedDeferred = async {
+            withTimeoutOrNull(100) {
+                prefs.settingsFlow(sourceId)
+                    .drop(1)
+                    .first()
+            }
+        }
+        runCurrent()
+
+        prefs.fontSize().set(initialSettings.fontSize + 3)
+
+        collectedDeferred.await() shouldBe null
+    }
+
+    @Test
+    fun `settings flow skips duplicate emissions for unrelated source override rewrites`() = runTest {
+        val prefs = createPrefs()
+        val trackedSourceId = 123L
+        val otherSourceId = 456L
+        val initialSettings = prefs.settingsFlow(trackedSourceId).first()
+        val collectedDeferred = async {
+            withTimeoutOrNull(100) {
+                prefs.settingsFlow(trackedSourceId)
+                    .drop(1)
+                    .first()
+            }
+        }
+        runCurrent()
+
+        prefs.enableSourceOverride(otherSourceId)
+
+        collectedDeferred.await() shouldBe null
+    }
+
+    @Test
+    fun `settings flow keeps google translation settings when renderer changes`() = runTest {
+        val prefs = createPrefs()
+        val sourceId = 123L
+
+        prefs.googleTranslationEnabled().set(true)
+        prefs.googleTranslationSourceLang().set("English")
+        prefs.googleTranslationTargetLang().set("Russian")
+        prefs.googleTranslationAutoStart().set(true)
+
+        val initialSettings = prefs.settingsFlow(sourceId).first()
+        initialSettings.googleTranslationEnabled shouldBe true
+        initialSettings.googleTranslationSourceLang shouldBe "English"
+        initialSettings.googleTranslationTargetLang shouldBe "Russian"
+        initialSettings.googleTranslationAutoStart shouldBe true
+
+        val updatedSettingsDeferred = async {
+            withTimeoutOrNull(1_000) {
+                prefs.settingsFlow(sourceId)
+                    .drop(1)
+                    .first()
+            }
+        }
+        runCurrent()
+
+        prefs.preferWebViewRenderer().set(true)
+
+        val updatedSettings = updatedSettingsDeferred.await()
+        updatedSettings?.preferWebViewRenderer shouldBe true
+        updatedSettings?.googleTranslationEnabled shouldBe true
+        updatedSettings?.googleTranslationSourceLang shouldBe "English"
+        updatedSettings?.googleTranslationTargetLang shouldBe "Russian"
+        updatedSettings?.googleTranslationAutoStart shouldBe true
+    }
+
+    @Test
+    fun `typography preset calculates dynamic scale parameters`() = runTest {
+        val prefs = createPrefs()
+        val sourceId = 1L
+
+        // Default should be CUSTOM and return manual preferences
+        prefs.fontSize().set(16)
+        prefs.lineHeight().set(1.4f)
+        prefs.margin().set(20)
+        prefs.paragraphSpacing().set(10)
+        prefs.typographyPreset().set(NovelReaderTypographyPreset.CUSTOM)
+
+        val customSettings = prefs.resolveSettings(sourceId)
+        customSettings.fontSize shouldBe 16
+        customSettings.lineHeight shouldBe 1.4f
+        customSettings.margin shouldBe 20
+        customSettings.paragraphSpacing shouldBe 10
+        customSettings.typographyPreset shouldBe NovelReaderTypographyPreset.CUSTOM
+
+        val initialFlowSettings = prefs.settingsFlow(sourceId).first()
+        initialFlowSettings.typographyPreset shouldBe NovelReaderTypographyPreset.CUSTOM
+
+        // Switch to SUPERGOLDEN
+        prefs.typographyPreset().set(NovelReaderTypographyPreset.SUPERGOLDEN)
+        val sgSettings = prefs.resolveSettings(sourceId)
+        sgSettings.fontSize shouldBe 16
+        sgSettings.lineHeight shouldBe 1.47f
+        sgSettings.margin shouldBe 24 // 16 * 1.50 = 24
+        sgSettings.paragraphSpacing shouldBe 19 // 16 * 1.21 = 19.36 -> 19
+
+        val sgFlowSettings = prefs.settingsFlow(sourceId).first()
+        sgFlowSettings.typographyPreset shouldBe NovelReaderTypographyPreset.SUPERGOLDEN
+        sgFlowSettings.lineHeight shouldBe 1.47f
+
+        // Switch to GOLDEN
+        prefs.typographyPreset().set(NovelReaderTypographyPreset.GOLDEN)
+        val gSettings = prefs.resolveSettings(sourceId)
+        gSettings.fontSize shouldBe 16
+        gSettings.lineHeight shouldBe 1.52f
+        gSettings.margin shouldBe 29 // 16 * 1.83 = 29.28 -> 29
+        gSettings.paragraphSpacing shouldBe 20 // 16 * 1.27 = 20.32 -> 20
+
+        val gFlowSettings = prefs.settingsFlow(sourceId).first()
+        gFlowSettings.typographyPreset shouldBe NovelReaderTypographyPreset.GOLDEN
+        gFlowSettings.lineHeight shouldBe 1.52f
+    }
+
+    private class FakePreferenceStore : PreferenceStore {
+        private val strings = mutableMapOf<String, Preference<String>>()
+        private val longs = mutableMapOf<String, Preference<Long>>()
+        private val ints = mutableMapOf<String, Preference<Int>>()
+        private val floats = mutableMapOf<String, Preference<Float>>()
+        private val booleans = mutableMapOf<String, Preference<Boolean>>()
+        private val stringSets = mutableMapOf<String, Preference<Set<String>>>()
+        private val objects = mutableMapOf<String, Preference<Any>>()
+
+        override fun getString(key: String, defaultValue: String): Preference<String> =
+            strings.getOrPut(key) { FakePreference(key, defaultValue) }
+
+        override fun getLong(key: String, defaultValue: Long): Preference<Long> =
+            longs.getOrPut(key) { FakePreference(key, defaultValue) }
+
+        override fun getInt(key: String, defaultValue: Int): Preference<Int> =
+            ints.getOrPut(key) { FakePreference(key, defaultValue) }
+
+        override fun getFloat(key: String, defaultValue: Float): Preference<Float> =
+            floats.getOrPut(key) { FakePreference(key, defaultValue) }
+
+        override fun getBoolean(key: String, defaultValue: Boolean): Preference<Boolean> =
+            booleans.getOrPut(key) { FakePreference(key, defaultValue) }
+
+        override fun getStringSet(key: String, defaultValue: Set<String>): Preference<Set<String>> =
+            stringSets.getOrPut(key) { FakePreference(key, defaultValue) }
+
+        @Suppress("UNCHECKED_CAST")
+        override fun <T> getObject(
+            key: String,
+            defaultValue: T,
+            serializer: (T) -> String,
+            deserializer: (String) -> T,
+        ): Preference<T> {
+            return objects.getOrPut(key) { FakePreference(key, defaultValue as Any) } as Preference<T>
+        }
+
+        override fun getAll(): Map<String, *> {
+            return emptyMap<String, Any>()
+        }
+    }
+
+    private class FakePreference<T>(
+        private val preferenceKey: String,
+        defaultValue: T,
+    ) : Preference<T> {
+        private val state = MutableStateFlow(defaultValue)
+
+        override fun key(): String = preferenceKey
+
+        override fun get(): T = state.value
+
+        override fun set(value: T) {
+            state.value = value
+        }
+
+        override fun isSet(): Boolean = true
+
+        override fun delete() = Unit
+
+        override fun defaultValue(): T = state.value
+
+        override fun changes(): Flow<T> = state
+
+        override fun stateIn(scope: CoroutineScope) = state
+    }
+}

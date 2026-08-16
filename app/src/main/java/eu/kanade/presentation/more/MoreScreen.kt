@@ -1,0 +1,270 @@
+package eu.kanade.presentation.more
+
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ChromeReaderMode
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.automirrored.outlined.Label
+import androidx.compose.material.icons.outlined.Book
+import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.GetApp
+import androidx.compose.material.icons.outlined.Hub
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.NewReleases
+import androidx.compose.material.icons.outlined.QueryStats
+import androidx.compose.material.icons.outlined.ReportProblem
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.VideoSettings
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.vectorResource
+import com.yomi.reader.BuildConfig
+import com.yomi.reader.R
+import eu.kanade.domain.ui.model.NavStyle
+import eu.kanade.presentation.more.settings.widget.SwitchPreferenceWidget
+import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
+import eu.kanade.presentation.tutorial.TipAnchor
+import eu.kanade.presentation.tutorial.TutorialScreenEntry
+import eu.kanade.tachiyomi.ui.more.DownloadQueueState
+import tachiyomi.i18n.MR
+import tachiyomi.i18n.aniyomi.AYMR
+import tachiyomi.presentation.core.components.ScrollbarLazyColumn
+import tachiyomi.presentation.core.components.material.Scaffold
+import tachiyomi.presentation.core.i18n.pluralStringResource
+import tachiyomi.presentation.core.i18n.stringResource
+
+@Composable
+fun MoreScreen(
+    downloadQueueStateProvider: () -> DownloadQueueState,
+    downloadedOnly: Boolean,
+    onDownloadedOnlyChange: (Boolean) -> Unit,
+    incognitoMode: Boolean,
+    onIncognitoModeChange: (Boolean) -> Unit,
+    navStyle: NavStyle,
+    onClickAlt: () -> Unit,
+    onClickDownloadQueue: () -> Unit,
+    onClickCategories: () -> Unit,
+    onClickStats: () -> Unit,
+    onClickLibraryUpdateErrors: () -> Unit,
+    onClickStorage: () -> Unit,
+    onClickDataAndStorage: () -> Unit,
+    onClickPlayerSettings: () -> Unit,
+    onClickMangaReaderSettings: () -> Unit,
+    onClickNovelReaderSettings: () -> Unit,
+    onClickSettings: () -> Unit,
+    onClickAbout: () -> Unit,
+    onClickHelp: () -> Unit,
+    onClickDebugAppUpdatePreview: () -> Unit,
+    onClickDebugUpdatedChangelogPreview: () -> Unit,
+    onClickDebugResetAuroraHeart: () -> Unit,
+    onClickDebugResetLatticeResonance: () -> Unit,
+    onClickDebugForceLatticeBreach: () -> Unit,
+    latticeGridAvailable: Boolean,
+    onClickOpenLatticeGrid: () -> Unit,
+) {
+    TutorialScreenEntry(TipAnchor.MORE_TAB)
+    Scaffold { contentPadding ->
+        ScrollbarLazyColumn(
+            modifier = Modifier.padding(contentPadding),
+        ) {
+            item {
+                LogoHeader()
+            }
+            item {
+                SwitchPreferenceWidget(
+                    title = stringResource(MR.strings.label_downloaded_only),
+                    subtitle = stringResource(MR.strings.downloaded_only_summary),
+                    icon = Icons.Outlined.CloudOff,
+                    checked = downloadedOnly,
+                    onCheckedChanged = onDownloadedOnlyChange,
+                )
+            }
+            item {
+                SwitchPreferenceWidget(
+                    title = stringResource(MR.strings.pref_incognito_mode),
+                    subtitle = stringResource(AYMR.strings.pref_incognito_mode_summary),
+                    icon = ImageVector.vectorResource(R.drawable.ic_glasses_24dp),
+                    checked = incognitoMode,
+                    onCheckedChanged = onIncognitoModeChange,
+                )
+            }
+
+            item { HorizontalDivider() }
+
+            item {
+                TextPreferenceWidget(
+                    title = navStyle.moreTab.options.title,
+                    icon = navStyle.moreIcon,
+                    onPreferenceClick = onClickAlt,
+                )
+            }
+
+            item {
+                TextPreferenceWidget(
+                    title = stringResource(AYMR.strings.general_categories),
+                    icon = Icons.AutoMirrored.Outlined.Label,
+                    onPreferenceClick = onClickCategories,
+                )
+            }
+            item {
+                TextPreferenceWidget(
+                    title = stringResource(MR.strings.label_stats),
+                    icon = Icons.Outlined.QueryStats,
+                    onPreferenceClick = onClickStats,
+                )
+            }
+            item {
+                TextPreferenceWidget(
+                    title = stringResource(MR.strings.label_data_storage),
+                    icon = Icons.Outlined.Storage,
+                    onPreferenceClick = onClickDataAndStorage,
+                )
+            }
+            item {
+                TextPreferenceWidget(
+                    title = stringResource(AYMR.strings.option_label_library_update_errors),
+                    icon = Icons.Outlined.ReportProblem,
+                    onPreferenceClick = onClickLibraryUpdateErrors,
+                )
+            }
+            item {
+                val downloadQueueState = downloadQueueStateProvider()
+                TextPreferenceWidget(
+                    title = stringResource(MR.strings.label_download_queue),
+                    subtitle = when (downloadQueueState) {
+                        DownloadQueueState.Stopped -> null
+                        is DownloadQueueState.Paused -> {
+                            val pending = downloadQueueState.pending
+                            if (pending == 0) {
+                                stringResource(MR.strings.paused)
+                            } else {
+                                "${stringResource(MR.strings.paused)} • ${
+                                    pluralStringResource(
+                                        MR.plurals.download_queue_summary,
+                                        count = pending,
+                                        pending,
+                                    )
+                                }"
+                            }
+                        }
+
+                        is DownloadQueueState.Downloading -> {
+                            val pending = downloadQueueState.pending
+                            pluralStringResource(
+                                MR.plurals.download_queue_summary,
+                                count = pending,
+                                pending,
+                            )
+                        }
+                    },
+                    icon = Icons.Outlined.GetApp,
+                    onPreferenceClick = onClickDownloadQueue,
+                )
+            }
+
+            item { HorizontalDivider() }
+
+            item {
+                TextPreferenceWidget(
+                    title = stringResource(MR.strings.label_settings),
+                    icon = Icons.Outlined.Settings,
+                    onPreferenceClick = onClickSettings,
+                )
+            }
+            item {
+                TextPreferenceWidget(
+                    title = stringResource(AYMR.strings.label_player_settings),
+                    icon = Icons.Outlined.VideoSettings,
+                    onPreferenceClick = onClickPlayerSettings,
+                )
+            }
+            item {
+                TextPreferenceWidget(
+                    title = stringResource(MR.strings.pref_category_reader),
+                    subtitle = stringResource(MR.strings.pref_reader_summary),
+                    icon = Icons.AutoMirrored.Outlined.ChromeReaderMode,
+                    onPreferenceClick = onClickMangaReaderSettings,
+                )
+            }
+            item {
+                TextPreferenceWidget(
+                    title = stringResource(AYMR.strings.pref_category_novel_reader),
+                    subtitle = stringResource(AYMR.strings.pref_novel_reader_summary),
+                    icon = Icons.Outlined.Book,
+                    onPreferenceClick = onClickNovelReaderSettings,
+                )
+            }
+            item {
+                TextPreferenceWidget(
+                    title = stringResource(MR.strings.pref_category_about),
+                    icon = Icons.Outlined.Info,
+                    onPreferenceClick = onClickAbout,
+                )
+            }
+            // Safety net for the Frame resonance easter egg: once every carrier is latched
+            // the Grid must always be reachable by hand, even if an auto-open was missed.
+            if (latticeGridAvailable) {
+                item {
+                    TextPreferenceWidget(
+                        title = stringResource(AYMR.strings.lattice_open_manual),
+                        subtitle = stringResource(AYMR.strings.lattice_open_manual_summary),
+                        icon = Icons.Outlined.Hub,
+                        onPreferenceClick = onClickOpenLatticeGrid,
+                    )
+                }
+            }
+            if (BuildConfig.DEBUG) {
+                item {
+                    TextPreferenceWidget(
+                        title = stringResource(AYMR.strings.debug_app_update_preview),
+                        subtitle = stringResource(AYMR.strings.debug_app_update_preview_summary),
+                        icon = Icons.Outlined.NewReleases,
+                        onPreferenceClick = onClickDebugAppUpdatePreview,
+                    )
+                }
+                item {
+                    TextPreferenceWidget(
+                        title = stringResource(AYMR.strings.debug_updated_changelog_preview),
+                        subtitle = stringResource(AYMR.strings.debug_updated_changelog_preview_summary),
+                        icon = Icons.Outlined.NewReleases,
+                        onPreferenceClick = onClickDebugUpdatedChangelogPreview,
+                    )
+                }
+                item {
+                    TextPreferenceWidget(
+                        title = stringResource(AYMR.strings.debug_reset_aurora_heart),
+                        subtitle = stringResource(AYMR.strings.debug_reset_aurora_heart_summary),
+                        icon = Icons.Outlined.ReportProblem,
+                        onPreferenceClick = onClickDebugResetAuroraHeart,
+                    )
+                }
+                item {
+                    TextPreferenceWidget(
+                        title = stringResource(AYMR.strings.debug_reset_lattice_resonance),
+                        subtitle = stringResource(AYMR.strings.debug_reset_lattice_resonance_summary),
+                        icon = Icons.Outlined.ReportProblem,
+                        onPreferenceClick = onClickDebugResetLatticeResonance,
+                    )
+                }
+                item {
+                    TextPreferenceWidget(
+                        title = stringResource(AYMR.strings.debug_force_lattice_breach),
+                        subtitle = stringResource(AYMR.strings.debug_force_lattice_breach_summary),
+                        icon = Icons.Outlined.NewReleases,
+                        onPreferenceClick = onClickDebugForceLatticeBreach,
+                    )
+                }
+            }
+            item {
+                TextPreferenceWidget(
+                    title = stringResource(MR.strings.label_help),
+                    icon = Icons.AutoMirrored.Outlined.HelpOutline,
+                    onPreferenceClick = onClickHelp,
+                )
+            }
+        }
+    }
+}

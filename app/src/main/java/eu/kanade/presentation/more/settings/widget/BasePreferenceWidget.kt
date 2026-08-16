@@ -1,0 +1,249 @@
+package eu.kanade.presentation.more.settings.widget
+
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.StartOffset
+import androidx.compose.animation.core.StartOffsetType
+import androidx.compose.animation.core.repeatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import eu.kanade.domain.ui.UiPreferences
+import eu.kanade.presentation.more.auroraPrimaryMenuTitleTextStyle
+import eu.kanade.presentation.more.resolveAuroraMoreCardBorderColor
+import eu.kanade.presentation.more.resolveAuroraMoreCardContainerColor
+import eu.kanade.presentation.more.settings.AURORA_SETTINGS_CARD_SHAPE
+import eu.kanade.presentation.more.settings.AURORA_SETTINGS_CARD_VERTICAL_PADDING
+import eu.kanade.presentation.more.settings.LocalPreferenceHighlighted
+import eu.kanade.presentation.more.settings.LocalPreferenceMinHeight
+import eu.kanade.presentation.more.settings.LocalSettingsUiStyle
+import eu.kanade.presentation.more.settings.SettingsUiStyle
+import eu.kanade.presentation.more.settings.auroraCardStyle
+import eu.kanade.presentation.more.settings.settingsTitleColor
+import eu.kanade.presentation.theme.AuroraTheme
+import eu.kanade.presentation.theme.LocalIsDefaultAppUiFont
+import kotlinx.coroutines.delay
+import tachiyomi.presentation.core.util.LocalAppHaptics
+import tachiyomi.presentation.core.util.collectAsState
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
+import kotlin.time.Duration.Companion.seconds
+
+@Composable
+internal fun AuroraSettingsCard(
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    darkRimLightEnabled: Boolean = true,
+    content: @Composable () -> Unit,
+) {
+    val colors = AuroraTheme.colors
+    val appHaptics = LocalAppHaptics.current
+    val containerColor = if (!colors.isDark && !colors.isEInk) {
+        Color.Transparent
+    } else {
+        resolveAuroraMoreCardContainerColor(colors)
+    }
+
+    Card(
+        onClick = {
+            appHaptics.tap()
+            onClick?.invoke()
+        },
+        enabled = onClick != null,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = AURORA_SETTINGS_CARD_VERTICAL_PADDING)
+            .auroraCardStyle(colors, AURORA_SETTINGS_CARD_SHAPE, applyDarkRimLight = darkRimLightEnabled),
+        shape = AURORA_SETTINGS_CARD_SHAPE,
+        colors = CardDefaults.cardColors(
+            containerColor = containerColor,
+            disabledContainerColor = containerColor,
+        ),
+        border = if (colors.isEInk) {
+            BorderStroke(
+                width = 1.dp,
+                color = resolveAuroraMoreCardBorderColor(colors),
+            )
+        } else {
+            null
+        },
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 0.dp,
+        ),
+    ) {
+        Box(modifier = Modifier.clip(AURORA_SETTINGS_CARD_SHAPE)) {
+            content()
+        }
+    }
+}
+
+@Composable
+internal fun BasePreferenceWidget(
+    modifier: Modifier = Modifier,
+    title: String? = null,
+    subcomponent: @Composable (ColumnScope.() -> Unit)? = null,
+    icon: @Composable (() -> Unit)? = null,
+    onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
+    widget: @Composable (() -> Unit)? = null,
+) {
+    val highlighted = LocalPreferenceHighlighted.current
+    val minHeight = LocalPreferenceMinHeight.current
+    val isAurora = LocalSettingsUiStyle.current == SettingsUiStyle.Aurora
+    val useMediumWeight = LocalIsDefaultAppUiFont.current
+    val appHaptics = LocalAppHaptics.current
+    val uiPreferences = remember { Injekt.get<UiPreferences>() }
+    val darkRimLightEnabled by uiPreferences.auroraDarkRimLightEnabled().collectAsState()
+
+    val rowContent: @Composable () -> Unit = {
+        Row(
+            modifier = Modifier
+                .then(
+                    if (isAurora) {
+                        Modifier.highlightBackground(highlighted)
+                    } else {
+                        Modifier
+                    },
+                )
+                .sizeIn(minHeight = minHeight)
+                .then(
+                    if (isAurora && onLongClick != null) {
+                        Modifier.combinedClickable(
+                            onClick = {
+                                appHaptics.tap()
+                                onClick?.invoke()
+                            },
+                            onLongClick = onLongClick,
+                        )
+                    } else if (isAurora) {
+                        Modifier
+                    } else {
+                        Modifier.combinedClickable(
+                            enabled = onClick != null || onLongClick != null,
+                            onClick = {
+                                appHaptics.tap()
+                                onClick?.invoke()
+                            },
+                            onLongClick = onLongClick,
+                        )
+                    },
+                )
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (icon != null) {
+                Box(
+                    modifier = Modifier.padding(start = PrefsHorizontalPadding, end = 8.dp),
+                    content = { icon() },
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = PrefsVerticalPadding),
+            ) {
+                if (!title.isNullOrBlank()) {
+                    val titleTextStyle = if (isAurora) {
+                        auroraPrimaryMenuTitleTextStyle(
+                            baseStyle = MaterialTheme.typography.bodyLarge,
+                            useMediumWeight = useMediumWeight,
+                        )
+                    } else {
+                        MaterialTheme.typography.titleLarge.copy(fontSize = TitleFontSize)
+                    }
+                    Text(
+                        modifier = Modifier.padding(horizontal = PrefsHorizontalPadding),
+                        text = title,
+                        overflow = if (isAurora) TextOverflow.Clip else TextOverflow.Ellipsis,
+                        maxLines = if (isAurora) Int.MAX_VALUE else 2,
+                        style = titleTextStyle,
+                        color = settingsTitleColor(),
+                    )
+                }
+                subcomponent?.invoke(this)
+            }
+            if (widget != null) {
+                Box(
+                    modifier = Modifier.padding(end = PrefsHorizontalPadding),
+                    content = { widget() },
+                )
+            }
+        }
+    }
+
+    if (isAurora) {
+        AuroraSettingsCard(
+            modifier = modifier,
+            onClick = if (onLongClick == null) onClick else null,
+            darkRimLightEnabled = darkRimLightEnabled,
+        ) {
+            rowContent()
+        }
+    } else {
+        rowContent()
+    }
+}
+
+internal fun Modifier.highlightBackground(highlighted: Boolean): Modifier = composed {
+    var highlightFlag by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (highlighted) {
+            highlightFlag = true
+            delay(3.seconds)
+            highlightFlag = false
+        }
+    }
+    val highlight by animateColorAsState(
+        targetValue = if (highlightFlag) {
+            MaterialTheme.colorScheme.surfaceTint.copy(alpha = .12f)
+        } else {
+            Color.Transparent
+        },
+        animationSpec = if (highlightFlag) {
+            repeatable(
+                iterations = 5,
+                animation = tween(durationMillis = 200),
+                repeatMode = RepeatMode.Reverse,
+                initialStartOffset = StartOffset(
+                    offsetMillis = 600,
+                    offsetType = StartOffsetType.Delay,
+                ),
+            )
+        } else {
+            tween(200)
+        },
+        label = "highlight",
+    )
+    Modifier.background(color = highlight)
+}
+
+internal val TrailingWidgetBuffer = 16.dp
+internal val PrefsHorizontalPadding = 16.dp
+internal val PrefsVerticalPadding = 16.dp
+internal val TitleFontSize = 16.sp

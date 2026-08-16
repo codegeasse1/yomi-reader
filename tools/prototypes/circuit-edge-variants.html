@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Circuit Edge — варианты (контур = форма nav bar)</title>
+  <style>
+    :root {
+      --bg: #07090d; --panel: #0e141c; --ink: #e8f7ff; --muted: #8aa0b5;
+      --cyan: #5fe9ff; --amber: #ffb84d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100%;
+      background: radial-gradient(900px 480px at 50% 0%, #12304255, transparent 55%), var(--bg);
+      color: var(--ink); font: 13px/1.4 system-ui, "Segoe UI", sans-serif;
+    }
+    header {
+      position: sticky; top: 0; z-index: 10;
+      background: #07090de8; backdrop-filter: blur(10px);
+      border-bottom: 1px solid #1c2734; padding: 12px 16px;
+    }
+    h1 { margin: 0 0 4px; font-size: 16px; }
+    .note { color: var(--muted); font-size: 12px; max-width: 920px; margin: 0 0 8px; }
+    .note strong { color: #b7e9f5; }
+    .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    select, button {
+      background: #121a24; color: var(--ink); border: 1px solid #2a3a4c;
+      border-radius: 8px; padding: 6px 10px; font: inherit; cursor: pointer;
+    }
+    label { color: var(--muted); display: flex; gap: 6px; align-items: center; }
+    main {
+      display: grid; grid-template-columns: 280px 1fr; gap: 14px;
+      max-width: 1100px; margin: 0 auto; padding: 14px 16px 32px;
+    }
+    @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
+    .list { display: flex; flex-direction: column; gap: 6px; max-height: 70vh; overflow: auto; }
+    .card {
+      text-align: left; background: var(--panel); border: 1px solid #1c2734;
+      border-radius: 10px; padding: 9px 10px; cursor: pointer; color: inherit;
+    }
+    .card.active { border-color: #5fe9ff88; box-shadow: 0 0 0 1px #5fe9ff33; }
+    .card .n { font: 10px ui-monospace, Consolas, monospace; color: var(--cyan); letter-spacing: .08em; }
+    .card h3 { margin: 2px 0 2px; font-size: 13px; }
+    .card .t { font: 10px ui-monospace, Consolas, monospace; color: var(--muted); }
+    .stage {
+      background: #0b1017; border: 1px solid #1c2734; border-radius: 14px; padding: 14px;
+      min-height: 420px; display: flex; flex-direction: column; gap: 10px;
+    }
+    .stage h2 { margin: 0; font-size: 15px; }
+    .meta { color: var(--muted); font-size: 12px; }
+    .meta code { color: #b7e9f5; background: #101820; padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+    .phone-wrap {
+      flex: 1; display: flex; align-items: flex-end; justify-content: center;
+      min-height: 240px; padding: 16px;
+      background: radial-gradient(420px 180px at 50% 100%, #12324a44, transparent 70%);
+      border-radius: 10px;
+    }
+    .phone {
+      width: min(400px, 100%); height: 200px; border-radius: 28px;
+      background: #0a0e14; border: 1px solid #243041; position: relative; overflow: hidden;
+    }
+    .content {
+      position: absolute; inset: 0 0 78px; display: grid; place-items: center;
+      color: #5a7188; font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+      background: linear-gradient(180deg, #101820, #0a0e14);
+    }
+    .nav {
+      position: absolute; left: 10px; right: 10px; bottom: 10px; height: 62px;
+      border-radius: 999px; background: rgba(18,24,34,.92); border: 1px solid #5fe9ff1f;
+      display: flex; align-items: center; justify-content: space-around; padding: 0 6px;
+      isolation: isolate;
+    }
+    .nav canvas {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      border-radius: inherit; pointer-events: none; z-index: 1;
+    }
+    .tab {
+      flex: 1; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 3px;
+      color: #8ea2b6; font-size: 10px;
+    }
+    .tab .ico { width: 18px; height: 18px; border-radius: 6px; background: #2a3646; }
+    .tab.on { color: var(--cyan); }
+    .tab.on .ico {
+      background: linear-gradient(135deg, #5fe9ff, #2bb8d0);
+      box-shadow: 0 0 12px #5fe9ff66;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Circuit Edge — контур = форма nav bar</h1>
+    <p class="note">
+      <strong>Почему раньше «дуга»:</strong> ошибочно рисовали отдельную U-кривую по низу
+      (как «улыбку»), а не stroke по реальному <code>roundRect</code> капсулы.
+      Здесь <strong>все</strong> варианты идут строго по геометрии бара: скруглённый прямоугольник
+      (тот же контур, что border у nav).
+    </p>
+    <div class="tools">
+      <label>Вариант <select id="sel"></select></label>
+      <label><input type="checkbox" id="reduced" /> reduced motion</label>
+      <button type="button" id="prev">←</button>
+      <button type="button" id="next">→</button>
+      <button type="button" id="restart">restart</button>
+    </div>
+  </header>
+  <main>
+    <aside class="list" id="list"></aside>
+    <section class="stage">
+      <h2 id="title">—</h2>
+      <div class="meta" id="meta"></div>
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="content">preview · library</div>
+          <div class="nav" id="nav">
+            <canvas id="fx"></canvas>
+            <div class="tab on"><div class="ico"></div>Главная</div>
+            <div class="tab"><div class="ico"></div>Тайтлы</div>
+            <div class="tab"><div class="ico"></div>Новое</div>
+            <div class="tab"><div class="ico"></div>Обзор</div>
+            <div class="tab"><div class="ico"></div>Ещё</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+<script>
+const CYAN = "#5fe9ff", AMBER = "#ffb84d";
+const rgba = (hex, a) => {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+};
+const hexParts = (hex) => [
+  parseInt(hex.slice(1, 3), 16),
+  parseInt(hex.slice(3, 5), 16),
+  parseInt(hex.slice(5, 7), 16),
+];
+/** Lerp two #rrggbb colors; t in 0..1 → returns #rrggbb */
+const lerpHex = (a, b, t) => {
+  const u = Math.min(1, Math.max(0, t));
+  const [ar, ag, ab] = hexParts(a);
+  const [br, bg, bb] = hexParts(b);
+  const r = Math.round(ar + (br - ar) * u);
+  const g = Math.round(ag + (bg - ag) * u);
+  const bl = Math.round(ab + (bb - ab) * u);
+  return `#${r.toString(16).padStart(2,"0")}${g.toString(16).padStart(2,"0")}${bl.toString(16).padStart(2,"0")}`;
+};
+
+/** Sample points on the nav capsule outline (true round-rect contour). */
+function capsulePoints(w, h, inset = 1.5, n = 120) {
+  const r = Math.min(h / 2, w / 2) - inset;
+  const x0 = inset, y0 = inset, x1 = w - inset, y1 = h - inset;
+  // perimeter lengths
+  const sw = Math.max(0, x1 - x0 - 2 * r);
+  const sh = Math.max(0, y1 - y0 - 2 * r);
+  const arc = Math.PI * r / 2;
+  const segs = [
+    { len: sw, at: (u) => ({ x: x0 + r + sw * u, y: y0 }) },                         // top
+    { len: arc, at: (u) => ({ x: x1 - r + Math.cos(-Math.PI/2 + u*Math.PI/2)*r, y: y0 + r + Math.sin(-Math.PI/2 + u*Math.PI/2)*r }) },
+    { len: sh, at: (u) => ({ x: x1, y: y0 + r + sh * u }) },                           // right
+    { len: arc, at: (u) => ({ x: x1 - r + Math.cos(0 + u*Math.PI/2)*r, y: y1 - r + Math.sin(0 + u*Math.PI/2)*r }) },
+    { len: sw, at: (u) => ({ x: x1 - r - sw * u, y: y1 }) },                           // bottom R→L
+    { len: arc, at: (u) => ({ x: x0 + r + Math.cos(Math.PI/2 + u*Math.PI/2)*r, y: y1 - r + Math.sin(Math.PI/2 + u*Math.PI/2)*r }) },
+    { len: sh, at: (u) => ({ x: x0, y: y1 - r - sh * u }) },                           // left B→T
+    { len: arc, at: (u) => ({ x: x0 + r + Math.cos(Math.PI + u*Math.PI/2)*r, y: y0 + r + Math.sin(Math.PI + u*Math.PI/2)*r }) },
+  ];
+  const total = segs.reduce((s, g) => s + Math.max(g.len, 1e-4), 0);
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    let d = (i / n) * total;
+    for (const g of segs) {
+      const L = Math.max(g.len, 1e-4);
+      if (d > L) { d -= L; continue; }
+      pts.push(g.at(d / L));
+      break;
+    }
+  }
+  return { pts, total };
+}
+
+function pointAt(pts, t) {
+  const n = pts.length;
+  const f = ((t % 1) + 1) % 1 * n;
+  return pts[Math.floor(f) % n];
+}
+
+/** Draw continuous polyline along capsule for fraction [t0,t1) of perimeter (wrap ok). */
+function strokeArc(ctx, pts, t0, t1, color, width, alpha = 1) {
+  const n = pts.length;
+  let a = ((t0 % 1) + 1) % 1;
+  let b = ((t1 % 1) + 1) % 1;
+  ctx.strokeStyle = typeof color === "string" && color.startsWith("#") ? rgba(color, alpha) : color;
+  ctx.lineWidth = width;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  const steps = Math.max(2, Math.round(((b - a + 1) % 1 || 1) * n));
+  // handle wrap: if t1 spans past 1
+  const len = (t1 - t0);
+  const span = len > 0 ? len : len + 1;
+  const count = Math.max(2, Math.round(span * n));
+  for (let i = 0; i <= count; i++) {
+    const t = t0 + span * (i / count);
+    const p = pointAt(pts, t);
+    if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+  }
+  ctx.stroke();
+}
+
+function drawBaseContour(ctx, w, h, alpha = 0.2) {
+  const r = h / 2 - 1.5;
+  ctx.strokeStyle = rgba(CYAN, alpha);
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.roundRect(1.5, 1.5, w - 3, h - 3, r);
+  ctx.stroke();
+}
+
+const VARIANTS = [
+  {
+    id: "10a",
+    name: "10A · Dual chase (рекомендуемый)",
+    tech: "2 line arcs on capsule path",
+    meta: "Cyan и amber — <strong>две линии</strong> (не точки), бегут по контуру капсулы друг за другом. Compose: PathMeasure + stroke segments.",
+    draw(ctx, w, h, t, reduced) {
+      const { pts } = capsulePoints(w, h);
+      drawBaseContour(ctx, w, h, 0.12);
+      const phase = reduced ? 0.15 : (t * 0.12) % 1;
+      const lenC = 0.28; // fraction of perimeter
+      const lenA = 0.22;
+      const gap = 0.08;
+      // soft glow underlines
+      strokeArc(ctx, pts, phase, phase + lenC, CYAN, 5.5, 0.12);
+      strokeArc(ctx, pts, phase + lenC + gap, phase + lenC + gap + lenA, AMBER, 5, 0.1);
+      // main lines
+      strokeArc(ctx, pts, phase, phase + lenC, CYAN, 2.2, 0.95);
+      strokeArc(ctx, pts, phase + lenC + gap, phase + lenC + gap + lenA, AMBER, 2.0, 0.95);
+    }
+  },
+  {
+    id: "10b",
+    name: "10B · Equal dual chase",
+    tech: "equal cyan/amber arcs",
+    meta: "Две равные дуги 25% периметра, gap 5%, скорость выше. Чёткий «друг за другом».",
+    draw(ctx, w, h, t, reduced) {
+      const { pts } = capsulePoints(w, h);
+      drawBaseContour(ctx, w, h, 0.1);
+      const phase = reduced ? 0.2 : (t * 0.16) % 1;
+      strokeArc(ctx, pts, phase, phase + 0.25, CYAN, 2.4, 0.95);
+      strokeArc(ctx, pts, phase + 0.3, phase + 0.55, AMBER, 2.4, 0.95);
+      strokeArc(ctx, pts, phase, phase + 0.25, CYAN, 6, 0.1);
+      strokeArc(ctx, pts, phase + 0.3, phase + 0.55, AMBER, 6, 0.1);
+    }
+  },
+  {
+    id: "10c",
+    name: "10C · Long cyan · short amber",
+    tech: "asymmetric chase",
+    meta: "Длинный cyan (~40%) + короткий amber «лидер» (~12%) — как сигнал + маркер.",
+    draw(ctx, w, h, t, reduced) {
+      const { pts } = capsulePoints(w, h);
+      drawBaseContour(ctx, w, h, 0.1);
+      const phase = reduced ? 0.05 : (t * 0.11) % 1;
+      strokeArc(ctx, pts, phase, phase + 0.4, CYAN, 2.1, 0.9);
+      strokeArc(ctx, pts, phase + 0.42, phase + 0.54, AMBER, 2.6, 1);
+      strokeArc(ctx, pts, phase + 0.42, phase + 0.54, AMBER, 7, 0.12);
+    }
+  },
+  {
+    id: "10d",
+    name: "10D · Opposite chase",
+    tech: "counter-rotating arcs",
+    meta: "Cyan по часовой, amber против — встречаются и расходятся. Всё линии, без точек.",
+    draw(ctx, w, h, t, reduced) {
+      const { pts } = capsulePoints(w, h);
+      drawBaseContour(ctx, w, h, 0.1);
+      const p = reduced ? 0.1 : (t * 0.13) % 1;
+      strokeArc(ctx, pts, p, p + 0.22, CYAN, 2.3, 0.95);
+      strokeArc(ctx, pts, 1 - p, 1 - p + 0.22, AMBER, 2.3, 0.95);
+    }
+  },
+  {
+    id: "10e",
+    name: "10E · Full soft contour + chase",
+    tech: "base stroke + dual chase",
+    meta: "Постоянный мягкий full-contour + поверх две chase-линии (ближе к референсу с обводкой всего бара).",
+    draw(ctx, w, h, t, reduced) {
+      const { pts } = capsulePoints(w, h);
+      drawBaseContour(ctx, w, h, 0.35);
+      const r = h / 2 - 1.5;
+      ctx.strokeStyle = rgba(CYAN, 0.1);
+      ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.roundRect(1.5, 1.5, w - 3, h - 3, r); ctx.stroke();
+      const phase = reduced ? 0.25 : (t * 0.12) % 1;
+      strokeArc(ctx, pts, phase, phase + 0.26, CYAN, 2.3, 1);
+      strokeArc(ctx, pts, phase + 0.32, phase + 0.52, AMBER, 2.1, 1);
+    }
+  },
+  {
+    id: "02",
+    name: "02 · Single bead on contour",
+    tech: "one head, no dots trail",
+    meta: "Тонкий полный контур + <strong>одна</strong> точка на path (без россыпи). Геометрия = capsule.",
+    draw(ctx, w, h, t, reduced) {
+      const { pts } = capsulePoints(w, h);
+      drawBaseContour(ctx, w, h, 0.4);
+      const p = reduced ? 0.15 : (t * 0.14) % 1;
+      const head = pointAt(pts, p);
+      ctx.beginPath(); ctx.fillStyle = rgba(CYAN, 0.3); ctx.arc(head.x, head.y, 5.5, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.fillStyle = CYAN; ctx.arc(head.x, head.y, 2.2, 0, Math.PI*2); ctx.fill();
+    }
+  },
+  {
+    id: "03",
+    name: "03 · Comet line (no dots)",
+    tech: "tapered polyline trail",
+    meta: "Не точки: утолщающаяся <strong>линия</strong>-хвост вдоль контура + amber head-segment.",
+    draw(ctx, w, h, t, reduced) {
+      const { pts } = capsulePoints(w, h, 1.5, 160);
+      drawBaseContour(ctx, w, h, 0.12);
+      const p = reduced ? 0.4 : (t * 0.15) % 1;
+      // trail as continuous stroke with decreasing width via multiple passes
+      for (let k = 12; k >= 1; k--) {
+        const t0 = p - 0.018 * k;
+        const t1 = p - 0.018 * (k - 1);
+        strokeArc(ctx, pts, t0, t1, CYAN, 1 + k * 0.25, 0.08 + 0.06 * (1 - k/12));
+      }
+      strokeArc(ctx, pts, p - 0.04, p, AMBER, 2.8, 1);
+    }
+  },
+  {
+    id: "05",
+    name: "05 · Breath contour only",
+    tech: "alpha pulse, no motion head",
+    meta: "Только контур капсулы, дышит alpha. Без traveler. Лучший reduced-motion default.",
+    draw(ctx, w, h, t, reduced) {
+      const a = reduced ? 0.4 : 0.22 + 0.28 * (0.5 + 0.5 * Math.sin(t * 1.5));
+      const r = h / 2 - 1.5;
+      ctx.strokeStyle = rgba(CYAN, a);
+      ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.roundRect(1.5, 1.5, w - 3, h - 3, r); ctx.stroke();
+      ctx.strokeStyle = rgba(CYAN, a * 0.25);
+      ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.roundRect(1.5, 1.5, w - 3, h - 3, r); ctx.stroke();
+    }
+  },
+  {
+    id: "05b",
+    name: "05B · Breath color cycle",
+    tech: "alpha pulse + cyan↔gold lerp",
+    meta: "Как 05 (только контур, без точки/хвоста), но цвет <strong>дышит</strong> циклично: cyan → жёлто-золотой → cyan. Compose: lerp Color + sin(t) на alpha и hue mix.",
+    draw(ctx, w, h, t, reduced) {
+      // mix 0 = cyan, 1 = amber/gold; slow cycle
+      const mix = reduced ? 0.35 : (0.5 + 0.5 * Math.sin(t * 0.85));
+      const a = reduced ? 0.42 : 0.26 + 0.32 * (0.5 + 0.5 * Math.sin(t * 1.35 + 0.4));
+      const col = lerpHex(CYAN, AMBER, mix);
+      const r = h / 2 - 1.5;
+      // outer soft glow
+      ctx.strokeStyle = rgba(col, a * 0.22);
+      ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.roundRect(1.5, 1.5, w - 3, h - 3, r); ctx.stroke();
+      // main contour
+      ctx.strokeStyle = rgba(col, 0.45 + a * 0.5);
+      ctx.lineWidth = 1.9;
+      ctx.beginPath(); ctx.roundRect(1.5, 1.5, w - 3, h - 3, r); ctx.stroke();
+      // faint inner hairline (slightly delayed phase for depth)
+      const mix2 = reduced ? 0.5 : (0.5 + 0.5 * Math.sin(t * 0.85 + Math.PI)); // opposite hue
+      const col2 = lerpHex(CYAN, AMBER, mix2);
+      ctx.strokeStyle = rgba(col2, 0.12 + a * 0.15);
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(3, 3, w - 6, h - 6, r - 1.5); ctx.stroke();
+    }
+  },
+  {
+    id: "08",
+    name: "08 · Dash on contour",
+    tech: "dashOffset along capsule",
+    meta: "Пунктир строго по roundRect. Compose: PathEffect.dashPathEffect + path = rounded rect.",
+    draw(ctx, w, h, t, reduced) {
+      const r = h / 2 - 1.5;
+      ctx.setLineDash([8, 10]);
+      ctx.lineDashOffset = reduced ? 0 : -t * 30;
+      ctx.strokeStyle = rgba(CYAN, 0.7);
+      ctx.lineWidth = 2;
+      ctx.lineCap = "round";
+      ctx.beginPath(); ctx.roundRect(1.5, 1.5, w - 3, h - 3, r); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = rgba(AMBER, 0.35);
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([4, 14]);
+      ctx.lineDashOffset = reduced ? 6 : -t * 18 + 6;
+      ctx.beginPath(); ctx.roundRect(1.5, 1.5, w - 3, h - 3, r); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  },
+  {
+    id: "07",
+    name: "07 · Specular + hairline",
+    tech: "sheen clipped to bar",
+    meta: "Hairline по контуру + мягкий блик. Без runner. Геометрия clip = capsule.",
+    draw(ctx, w, h, t, reduced) {
+      drawBaseContour(ctx, w, h, 0.35);
+      const p = reduced ? 0.4 : (t * 0.14) % 1;
+      const cx = p * (w + 100) - 50;
+      const g = ctx.createLinearGradient(cx - 40, 0, cx + 40, 0);
+      g.addColorStop(0, rgba(CYAN, 0));
+      g.addColorStop(0.5, rgba(CYAN, 0.22));
+      g.addColorStop(1, rgba(CYAN, 0));
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(1, 1, w - 2, h - 2, h / 2);
+      ctx.clip();
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+      ctx.restore();
+    }
+  },
+  {
+    id: "04",
+    name: "04 · PCB on contour",
+    tech: "contour + 3 via + pulse line",
+    meta: "Контур капсулы + 3 via на нижней дуге + короткий line-pulse (не точки-россыпь).",
+    draw(ctx, w, h, t, reduced) {
+      const { pts } = capsulePoints(w, h);
+      drawBaseContour(ctx, w, h, 0.38);
+      // vias on bottom region ~ t 0.35..0.65
+      [0.4, 0.5, 0.6].forEach((tt) => {
+        const p = pointAt(pts, tt);
+        ctx.beginPath(); ctx.strokeStyle = rgba(CYAN, 0.55); ctx.lineWidth = 1.2;
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.stroke();
+      });
+      const p = reduced ? 0.45 : (t * 0.18) % 1;
+      strokeArc(ctx, pts, p, p + 0.08, AMBER, 2.5, 1);
+    }
+  },
+  {
+    id: "10f",
+    name: "10F · Triple band",
+    tech: "cyan · amber · cyan",
+    meta: "Три линии на контуре: cyan–amber–cyan, одинаковый gap, равномерный chase.",
+    draw(ctx, w, h, t, reduced) {
+      const { pts } = capsulePoints(w, h);
+      drawBaseContour(ctx, w, h, 0.1);
+      const phase = reduced ? 0 : (t * 0.12) % 1;
+      const L = 0.16, G = 0.06;
+      strokeArc(ctx, pts, phase, phase + L, CYAN, 2.2, 0.95);
+      strokeArc(ctx, pts, phase + L + G, phase + 2*L + G, AMBER, 2.2, 0.95);
+      strokeArc(ctx, pts, phase + 2*(L+G), phase + 3*L + 2*G, CYAN, 2.2, 0.85);
+    }
+  },
+];
+
+// --- UI ---
+const list = document.getElementById("list");
+const sel = document.getElementById("sel");
+const title = document.getElementById("title");
+const meta = document.getElementById("meta");
+const canvas = document.getElementById("fx");
+const nav = document.getElementById("nav");
+const reducedEl = document.getElementById("reduced");
+let index = 0, start = performance.now();
+
+VARIANTS.forEach((v, i) => {
+  const o = document.createElement("option");
+  o.value = i; o.textContent = v.name; sel.appendChild(o);
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "card"; b.dataset.i = i;
+  b.innerHTML = `<div class="n">${v.id.toUpperCase()}</div><h3>${v.name}</h3><div class="t">${v.tech}</div>`;
+  b.onclick = () => select(i);
+  list.appendChild(b);
+});
+
+function select(i) {
+  index = i; sel.value = i; start = performance.now();
+  document.querySelectorAll(".card").forEach((c) => c.classList.toggle("active", +c.dataset.i === i));
+  const v = VARIANTS[i];
+  title.textContent = v.name;
+  meta.innerHTML = v.meta + ` · <code>${v.tech}</code>`;
+}
+
+function resize() {
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const rect = nav.getBoundingClientRect();
+  canvas.width = Math.floor(rect.width * dpr);
+  canvas.height = Math.floor(rect.height * dpr);
+  canvas.style.width = rect.width + "px";
+  canvas.style.height = rect.height + "px";
+  canvas.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function frame(now) {
+  const v = VARIANTS[index];
+  const ctx = canvas.getContext("2d");
+  const { width: w, height: h } = nav.getBoundingClientRect();
+  ctx.clearRect(0, 0, w, h);
+  v.draw(ctx, w, h, (now - start) / 1000, reducedEl.checked);
+  requestAnimationFrame(frame);
+}
+
+sel.onchange = () => select(+sel.value);
+document.getElementById("prev").onclick = () => select((index + VARIANTS.length - 1) % VARIANTS.length);
+document.getElementById("next").onclick = () => select((index + 1) % VARIANTS.length);
+document.getElementById("restart").onclick = () => { start = performance.now(); };
+addEventListener("resize", resize);
+
+select(0);
+resize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

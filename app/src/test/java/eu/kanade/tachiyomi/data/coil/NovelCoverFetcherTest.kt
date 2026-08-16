@@ -1,0 +1,357 @@
+package eu.kanade.tachiyomi.data.coil
+
+import coil3.Extras
+import coil3.ImageLoader
+import coil3.decode.DataSource
+import coil3.fetch.SourceFetchResult
+import coil3.request.CachePolicy
+import coil3.request.Options
+import coil3.size.Precision
+import coil3.size.Scale
+import coil3.size.Size
+import eu.kanade.tachiyomi.data.cache.NovelCoverCache
+import eu.kanade.tachiyomi.source.novel.NovelPluginImagePayload
+import io.mockk.every
+import io.mockk.mockk
+import kotlinx.coroutines.test.runTest
+import okhttp3.Call
+import okhttp3.Request
+import okio.FileSystem
+import okio.Path.Companion.toOkioPath
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import tachiyomi.domain.entries.novel.model.NovelCover
+import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicInteger
+
+class NovelCoverFetcherTest {
+
+    @TempDir
+    lateinit var tempDir: Path
+
+    @Test
+    fun `resolveNovelPluginImagePayload retries transient null results`() {
+        runTest {
+            val calls = AtomicInteger(0)
+
+            val payload = resolveNovelPluginImagePayload(
+                url = "novelimg://plugin-a?ref=cover-a",
+                retryDelayMillis = 0L,
+            ) {
+                if (calls.incrementAndGet() < 2) {
+                    null
+                } else {
+                    NovelPluginImagePayload(
+                        bytes = "fake-image".toByteArray(),
+                        mimeType = "image/png",
+                    )
+                }
+            }
+
+            assertEquals(2, calls.get())
+            assertEquals("image/png", payload?.mimeType)
+        }
+    }
+
+    @Test
+    fun `fetch resolves plugin image urls through plugin resolver`() {
+        runTest {
+            val context = mockk<android.content.Context>(relaxed = true)
+            val imageLoader = mockk<ImageLoader>(relaxed = true)
+            // Covers are read from the Coil disk cache first now; force a miss so the resolver runs.
+            every { imageLoader.diskCache } returns null
+            val data = NovelCover(
+                novelId = 5L,
+                sourceId = 101L,
+                isNovelFavorite = false,
+                url = "novelimg://plugin-a?ref=cover-a",
+                lastModified = 42L,
+            )
+            val options = Options(
+                context = context,
+                size = Size.ORIGINAL,
+                scale = Scale.FIT,
+                precision = Precision.EXACT,
+                diskCacheKey = "novel-plugin-image-test",
+                fileSystem = FileSystem.SYSTEM,
+                memoryCachePolicy = CachePolicy.ENABLED,
+                diskCachePolicy = CachePolicy.ENABLED,
+                networkCachePolicy = CachePolicy.ENABLED,
+                extras = Extras.EMPTY,
+            )
+
+            val result = NovelCoverFetcher(
+                data = data,
+                options = options,
+                sourceSiteUrlLazy = lazy { null },
+                coverFileLazy = lazy { null },
+                customCoverFileLazy = lazy { tempDir.resolve("custom_cover_plugin.jpg").toFile() },
+                diskCacheKeyProvider = { effectiveUrl, lastModified -> "novel-plugin-image-test" },
+                pluginHeadersProvider = { emptyMap() },
+                callFactoryLazy = lazy {
+                    object : Call.Factory {
+                        override fun newCall(request: Request): Call {
+                            error("network should not be called for plugin images")
+                        }
+                    }
+                },
+                imageLoader = imageLoader,
+                pluginImageResolver = { _ ->
+                    NovelPluginImagePayload(
+                        bytes = "fake-image".toByteArray(),
+                        mimeType = "image/png",
+                    )
+                },
+            ).fetch()
+
+            assertTrue(result is SourceFetchResult)
+            result as SourceFetchResult
+            assertEquals(DataSource.NETWORK, result.dataSource)
+            assertEquals("image/png", result.mimeType)
+        }
+    }
+
+    @Test
+    fun `fetch uses custom cover even when remote url is missing`() {
+        runTest {
+            val context = mockk<android.content.Context>(relaxed = true)
+            val imageLoader = mockk<ImageLoader>(relaxed = true)
+            val customCoverFile = tempDir.resolve("custom_cover_no_remote.jpg").toFile()
+            customCoverFile.writeText("custom-cover")
+            val data = NovelCover(
+                novelId = 9L,
+                sourceId = 77L,
+                isNovelFavorite = true,
+                url = null,
+                lastModified = 1234L,
+            )
+            val options = Options(
+                context = context,
+                size = Size.ORIGINAL,
+                scale = Scale.FIT,
+                precision = Precision.EXACT,
+                diskCacheKey = "novel-custom-cover-test",
+                fileSystem = FileSystem.SYSTEM,
+                memoryCachePolicy = CachePolicy.ENABLED,
+                diskCachePolicy = CachePolicy.ENABLED,
+                networkCachePolicy = CachePolicy.ENABLED,
+                extras = Extras.EMPTY,
+            )
+
+            val result = NovelCoverFetcher(
+                data = data,
+                options = options,
+                sourceSiteUrlLazy = lazy { "https://example.org" },
+                coverFileLazy = lazy { error("library cover cache should not be queried before custom cover") },
+                customCoverFileLazy = lazy { customCoverFile },
+                diskCacheKeyProvider = { effectiveUrl, lastModified -> "novel-custom-cover-test" },
+                pluginHeadersProvider = { emptyMap() },
+                callFactoryLazy = lazy {
+                    object : Call.Factory {
+                        override fun newCall(request: Request): Call {
+                            error("network should not be called when custom cover exists")
+                        }
+                    }
+                },
+                imageLoader = imageLoader,
+            ).fetch()
+
+            assertTrue(result is SourceFetchResult)
+            result as SourceFetchResult
+            assertEquals(DataSource.DISK, result.dataSource)
+            assertEquals(customCoverFile.toOkioPath(), result.source.file())
+        }
+    }
+
+    @Test
+    fun `fetch prefers dedicated library cover cache for favorite novels before network`() {
+        runTest {
+            val context = mockk<android.content.Context>(relaxed = true)
+            val imageLoader = mockk<ImageLoader>(relaxed = true)
+            val coverCache = NovelCoverCache(tempDir.resolve("novelcovers").toFile(), createDir = true)
+            val coverFile = coverCache.getCoverFile("https://example.org/cover.jpg")!!
+            coverFile.parentFile?.mkdirs()
+            coverFile.writeText("cached-cover")
+            val data = NovelCover(
+                novelId = 9L,
+                sourceId = 77L,
+                isNovelFavorite = true,
+                url = "https://example.org/cover.jpg",
+                lastModified = 1234L,
+            )
+            val options = Options(
+                context = context,
+                size = Size.ORIGINAL,
+                scale = Scale.FIT,
+                precision = Precision.EXACT,
+                diskCacheKey = "novel-cover-test",
+                fileSystem = FileSystem.SYSTEM,
+                memoryCachePolicy = CachePolicy.ENABLED,
+                diskCachePolicy = CachePolicy.ENABLED,
+                networkCachePolicy = CachePolicy.ENABLED,
+                extras = Extras.EMPTY,
+            )
+
+            val result = NovelCoverFetcher(
+                data = data,
+                options = options,
+                sourceSiteUrlLazy = lazy { "https://example.org" },
+                coverFileLazy = lazy { coverCache.getCoverFile(data.url) },
+                customCoverFileLazy = lazy { tempDir.resolve("custom_cover_library.jpg").toFile() },
+                diskCacheKeyProvider = { effectiveUrl, lastModified -> "novel-cover-test" },
+                pluginHeadersProvider = { emptyMap() },
+                callFactoryLazy = lazy {
+                    object : Call.Factory {
+                        override fun newCall(request: Request): Call {
+                            error("network should not be called when library cache exists")
+                        }
+                    }
+                },
+                imageLoader = imageLoader,
+            ).fetch()
+
+            assertTrue(result is SourceFetchResult)
+            result as SourceFetchResult
+            assertEquals(DataSource.DISK, result.dataSource)
+            assertEquals(coverFile.toOkioPath(), result.source.file())
+        }
+    }
+
+    @Test
+    fun `buildNovelCoverRequest adds plugin image headers and keeps site origin fallback`() {
+        val request = buildNovelCoverRequest(
+            url = "https://novel.tl/images/cover.jpg",
+            siteUrl = "https://novel.tl/",
+            pluginHeaders = mapOf(
+                "Accept" to "image/webp,image/*",
+                "Referer" to "https://cdn.example/plugin/",
+            ),
+            readFromNetwork = true,
+        )
+
+        assertEquals("image/webp,image/*", request.header("Accept"))
+        assertEquals("https://cdn.example/plugin/", request.header("Referer"))
+        assertEquals("https://novel.tl", request.header("Origin"))
+    }
+
+    @Test
+    fun `buildNovelCoverRequest adds referer and origin from site url`() {
+        val request = buildNovelCoverRequest(
+            url = "https://novel.tl/images/cover.jpg",
+            siteUrl = "https://novel.tl/",
+            readFromNetwork = true,
+        )
+
+        assertEquals("https://novel.tl/", request.header("Referer"))
+        assertEquals("https://novel.tl", request.header("Origin"))
+    }
+
+    @Test
+    fun `buildNovelCoverRequest skips referer and origin when site is missing`() {
+        val request = buildNovelCoverRequest(
+            url = "https://novel.tl/images/cover.jpg",
+            siteUrl = "   ",
+            readFromNetwork = true,
+        )
+
+        assertNull(request.header("Referer"))
+        assertNull(request.header("Origin"))
+    }
+
+    @Test
+    fun `buildNovelCoverRequest sets cache control based on policy`() {
+        val networkRequest = buildNovelCoverRequest(
+            url = "https://novel.tl/images/cover.jpg",
+            siteUrl = "https://novel.tl",
+            readFromNetwork = true,
+        )
+        val offlineRequest = buildNovelCoverRequest(
+            url = "https://novel.tl/images/cover.jpg",
+            siteUrl = "https://novel.tl",
+            readFromNetwork = false,
+        )
+
+        assertEquals("no-store", networkRequest.header("Cache-Control"))
+        assertEquals("no-cache, only-if-cached", offlineRequest.header("Cache-Control"))
+    }
+
+    @Test
+    fun `fetch falls back to database when remote url is missing`() = runTest {
+        val context = mockk<android.content.Context>(relaxed = true)
+        val imageLoader = mockk<ImageLoader>(relaxed = true)
+        val tempFile = tempDir.resolve("db_fallback_image.png").toFile()
+        tempFile.writeText("fake-bytes")
+
+        val data = NovelCover(
+            novelId = 15L,
+            sourceId = 77L,
+            isNovelFavorite = false,
+            url = null,
+            lastModified = 0L,
+        )
+        val options = Options(
+            context = context,
+            size = Size.ORIGINAL,
+            scale = Scale.FIT,
+            precision = Precision.EXACT,
+            diskCacheKey = "novel-db-fallback-test",
+            fileSystem = FileSystem.SYSTEM,
+            memoryCachePolicy = CachePolicy.ENABLED,
+            diskCachePolicy = CachePolicy.ENABLED,
+            networkCachePolicy = CachePolicy.ENABLED,
+            extras = Extras.EMPTY,
+        )
+
+        var dbProviderCalled = false
+
+        val result = NovelCoverFetcher(
+            data = data,
+            options = options,
+            sourceSiteUrlLazy = lazy { "https://example.org" },
+            coverFileLazy = lazy { null },
+            customCoverFileLazy = lazy { tempDir.resolve("custom_cover_db.jpg").toFile() },
+            diskCacheKeyProvider = { effectiveUrl, lastModified ->
+                "novel;${data.novelId};$effectiveUrl;${lastModified ?: data.lastModified}"
+            },
+            dbCoverProvider = {
+                dbProviderCalled = true
+                "file://${tempFile.absolutePath}" to 999L
+            },
+            pluginHeadersProvider = { emptyMap() },
+            callFactoryLazy = lazy {
+                object : Call.Factory {
+                    override fun newCall(request: Request): Call {
+                        error("network should not be called for file urls")
+                    }
+                }
+            },
+            imageLoader = imageLoader,
+        ).fetch()
+
+        assertTrue(dbProviderCalled)
+        assertTrue(result is SourceFetchResult)
+        result as SourceFetchResult
+        assertEquals(DataSource.DISK, result.dataSource)
+        assertEquals(tempFile.toOkioPath(), result.source.file())
+    }
+
+    @Test
+    fun `buildNovelCoverRequest converts IDN site url to punycode in referer and origin`() {
+        val request = buildNovelCoverRequest(
+            url = "https://ранобэ.рф/images/books/4260/vertical-73.jpeg",
+            siteUrl = "https://ранобэ.рф",
+            readFromNetwork = true,
+        )
+
+        val referer = request.header("Referer")!!
+        val origin = request.header("Origin")!!
+        assertFalse(referer.contains("ранобэ"))
+        assertFalse(origin.contains("ранобэ"))
+        assertTrue(referer.startsWith("https://xn--"))
+        assertTrue(origin.startsWith("https://xn--"))
+    }
+}

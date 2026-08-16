@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="yomitide_primary">#2E2BC7</color>
+    <color name="yomitide_onPrimary">#FFFFFF</color>
+    <color name="yomitide_primaryContainer">#DEDDFF</color>
+    <color name="yomitide_onPrimaryContainer">#070069</color>
+    <color name="yomitide_secondary">#D44AA0</color>
+    <color name="yomitide_onSecondary">#FFFFFF</color>
+    <color name="yomitide_secondaryContainer">#FFD8EC</color>
+    <color name="yomitide_onSecondaryContainer">#460026</color>
+    <color name="yomitide_tertiary">#0066B3</color>
+    <color name="yomitide_onTertiary">#FFFFFF</color>
+    <color name="yomitide_tertiaryContainer">#CCE5FF</color>
+    <color name="yomitide_onTertiaryContainer">#001E36</color>
+    <color name="yomitide_background">#FBF9FF</color>
+    <color name="yomitide_onBackground">#1D1B2C</color>
+    <color name="yomitide_surface">#FBF9FF</color>
+    <color name="yomitide_onSurface">#1D1B2C</color>
+    <color name="yomitide_surfaceVariant">#E5E1F8</color>
+    <color name="yomitide_onSurfaceVariant">#474558</color>
+    <color name="yomitide_outline">#76748C</color>
+    <color name="yomitide_inverseOnSurface">#F5EFFF</color>
+    <color name="yomitide_inverseSurface">#323046</color>
+    <color name="yomitide_primaryInverse">#5C4BFF</color>
+    <color name="yomitide_elevationOverlay">@color/yomitide_primary</color>
+</resources>

@@ -1,0 +1,4 @@
+-- Migration v5 to v6: No schema changes.
+-- The query 'insertProfileIfNotExists' was added to user_profile.sq which
+-- caused SQLDelight to bump the generated schema version from 5 to 6.
+-- No DDL changes are required; this file exists to keep the migration chain intact.

@@ -1,0 +1,2 @@
+-- Store the name the user gave a store, so refreshing its metadata cannot overwrite it.
+ALTER TABLE extension_store ADD COLUMN custom_name TEXT;

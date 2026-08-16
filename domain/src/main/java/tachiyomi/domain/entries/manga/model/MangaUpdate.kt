@@ -1,0 +1,62 @@
+package tachiyomi.domain.entries.manga.model
+
+import eu.kanade.tachiyomi.source.model.UpdateStrategy
+import kotlinx.serialization.json.JsonObject
+
+data class MangaUpdate(
+    val id: Long,
+    val source: Long? = null,
+    val favorite: Boolean? = null,
+    val pinned: Boolean? = null,
+    val lastUpdate: Long? = null,
+    val nextUpdate: Long? = null,
+    val fetchInterval: Int? = null,
+    val dateAdded: Long? = null,
+    val viewerFlags: Long? = null,
+    val chapterFlags: Long? = null,
+    val coverLastModified: Long? = null,
+    val url: String? = null,
+    val title: String? = null,
+    val artist: String? = null,
+    val author: String? = null,
+    val description: String? = null,
+    val notes: String? = null,
+    val genre: List<String>? = null,
+    val status: Long? = null,
+    val rating: Float? = null,
+    val thumbnailUrl: String? = null,
+    val updateStrategy: UpdateStrategy? = null,
+    val initialized: Boolean? = null,
+    val version: Long? = null,
+    /** Source-owned context (1.6 extensions keep e.g. a rotating slug here). */
+    val memo: JsonObject? = null,
+)
+
+fun Manga.toMangaUpdate(): MangaUpdate {
+    return MangaUpdate(
+        id = id,
+        source = source,
+        favorite = favorite,
+        pinned = pinned,
+        lastUpdate = lastUpdate,
+        nextUpdate = nextUpdate,
+        fetchInterval = fetchInterval,
+        dateAdded = dateAdded,
+        viewerFlags = viewerFlags,
+        chapterFlags = chapterFlags,
+        coverLastModified = coverLastModified,
+        url = url,
+        title = title,
+        artist = artist,
+        author = author,
+        description = description,
+        notes = notes,
+        genre = genre,
+        status = status,
+        rating = rating,
+        thumbnailUrl = thumbnailUrl,
+        updateStrategy = updateStrategy,
+        initialized = initialized,
+        version = version,
+    )
+}

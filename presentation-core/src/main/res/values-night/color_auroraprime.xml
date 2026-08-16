@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="auroraprime_primary">#B6F04C</color>
+    <color name="auroraprime_onPrimary">#1C2A00</color>
+    <color name="auroraprime_primaryContainer">#425C05</color>
+    <color name="auroraprime_onPrimaryContainer">#E0FFAD</color>
+    <color name="auroraprime_secondary">#C25CFF</color>
+    <color name="auroraprime_onSecondary">#32004F</color>
+    <color name="auroraprime_secondaryContainer">#4E1A8C</color>
+    <color name="auroraprime_onSecondaryContainer">#EAD3FF</color>
+    <color name="auroraprime_tertiary">#2FC9A0</color>
+    <color name="auroraprime_onTertiary">#00382C</color>
+    <color name="auroraprime_tertiaryContainer">#004F3E</color>
+    <color name="auroraprime_onTertiaryContainer">#7BF2C8</color>
+    <color name="auroraprime_background">#030810</color>
+    <color name="auroraprime_onBackground">#E3F0E8</color>
+    <color name="auroraprime_surface">#081020</color>
+    <color name="auroraprime_onSurface">#E3F0E8</color>
+    <color name="auroraprime_surfaceVariant">#162238</color>
+    <color name="auroraprime_onSurfaceVariant">#B5C4D8</color>
+    <color name="auroraprime_outline">#75849A</color>
+    <color name="auroraprime_inverseOnSurface">#1B241C</color>
+    <color name="auroraprime_inverseSurface">#DFEADF</color>
+    <color name="auroraprime_primaryInverse">#8FB42B</color>
+    <color name="auroraprime_elevationOverlay">@color/auroraprime_primary</color>
+</resources>

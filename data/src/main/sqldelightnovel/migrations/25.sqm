@@ -1,0 +1,5 @@
+-- The library view groups novels_categories by novel_id to pick the display category
+-- (MIN(category_id), one row per novel). The junction table had no index on novel_id,
+-- so every library query (which re-runs on any write to novels/chapters/history/
+-- excluded_scanlators/categories) did a full table scan of the junction.
+CREATE INDEX IF NOT EXISTS novels_categories_novel_id_index ON novels_categories(novel_id);

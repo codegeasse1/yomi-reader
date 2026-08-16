@@ -1,0 +1,94 @@
+package eu.kanade.tachiyomi.ui.browse.novel.source.globalsearch
+
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import cafe.adriel.voyager.core.model.rememberScreenModel
+import cafe.adriel.voyager.navigator.LocalNavigator
+import cafe.adriel.voyager.navigator.currentOrThrow
+import eu.kanade.core.util.ifNovelSourcesLoaded
+import eu.kanade.domain.ui.UiPreferences
+import eu.kanade.presentation.browse.isSecretHallQuery
+import eu.kanade.presentation.browse.novel.GlobalNovelSearchScreen
+import eu.kanade.presentation.browse.openSecretHallIfNeeded
+import eu.kanade.presentation.components.MeltdownInitiationHost
+import eu.kanade.presentation.util.Screen
+import eu.kanade.tachiyomi.ui.browse.novel.source.browse.BrowseNovelSourceScreen
+import eu.kanade.tachiyomi.ui.entries.novel.NovelScreen
+import tachiyomi.presentation.core.screens.LoadingScreen
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
+
+class GlobalNovelSearchScreen(
+    val searchQuery: String = "",
+) : Screen() {
+
+    @Composable
+    override fun Content() {
+        if (!ifNovelSourcesLoaded()) {
+            LoadingScreen()
+            return
+        }
+
+        val navigator = LocalNavigator.currentOrThrow
+        if (isSecretHallQuery(searchQuery)) {
+            LaunchedEffect(searchQuery) {
+                openSecretHallIfNeeded(navigator, searchQuery)
+            }
+            LoadingScreen()
+            return
+        }
+        val screenModel = rememberScreenModel {
+            GlobalNovelSearchScreenModel(
+                initialQuery = searchQuery,
+            )
+        }
+        val state by screenModel.state.collectAsStateWithLifecycle()
+
+        // Шаг 1 пасхалки: триггер "third impact" / "третий удар".
+        val uiPreferences = remember { Injekt.get<UiPreferences>() }
+        var meltdownTriggered by remember { mutableStateOf(false) }
+
+        MeltdownInitiationHost(
+            triggered = meltdownTriggered,
+            onAcknowledged = {
+                meltdownTriggered = false
+                uiPreferences.meltdownStage().set(1)
+            },
+            onDismiss = {
+                meltdownTriggered = false
+            },
+        ) {
+            androidx.compose.foundation.layout.Box(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
+                GlobalNovelSearchScreen(
+                    state = state,
+                    navigateUp = navigator::pop,
+                    onChangeSearchQuery = screenModel::updateSearchQuery,
+                    onSearch = { enteredQuery ->
+                        val trimmed = enteredQuery.trim().lowercase()
+                        if (trimmed == "third impact" || trimmed == "третий удар") {
+                            meltdownTriggered = true
+                        }
+                        if (!openSecretHallIfNeeded(navigator, enteredQuery)) {
+                            screenModel.search()
+                        }
+                    },
+                    onChangeSearchFilter = screenModel::setSourceFilter,
+                    onChangeLanguageFilter = screenModel::setLanguageFilter,
+                    onToggleResults = screenModel::toggleFilterResults,
+                    getNovel = { screenModel.getNovel(it) },
+                    onClickSource = {
+                        navigator.push(BrowseNovelSourceScreen(it.id, state.searchQuery))
+                    },
+                    onClickItem = { navigator.push(NovelScreen(it.id, true)) },
+                    onLongClickItem = { navigator.push(NovelScreen(it.id, true)) },
+                )
+            }
+        }
+    }
+}

@@ -1,0 +1,8 @@
+-- Book mode phase 2: the reading position becomes a locator anchored to a chapter.
+--
+-- char_offset stays as the whole-book offset (progress bar, library, migration source); the two new
+-- columns hold the part of the locator that survives a rebuild of the artifact: the offset inside
+-- the chapter named by last_chapter_id, plus the block that held it as a lookup hint.
+ALTER TABLE novel_books ADD COLUMN block_index INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE novel_books ADD COLUMN chapter_char_offset INTEGER NOT NULL DEFAULT 0;

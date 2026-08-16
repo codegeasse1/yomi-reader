@@ -1,0 +1,362 @@
+uniform float2 u_resolution;
+uniform float  u_time;
+uniform float  u_light;
+uniform float  u_quality;
+
+// ---- locked "Weeping Void" preset ----
+const float EYE_SIZE   = 0.27;
+const float PUPIL      = 0.46;
+const float BLINK      = 0.15;
+const float VEINS      = 2.00;
+const float IRIS       = 0.57;
+const float TEAR_AMT   = 0.91;
+const float TEAR_SPD   = 0.10;
+const float BLOOD      = 0.31;
+const float PULSE      = 0.66;
+const float FOG        = 1.91;
+const float GLITCH     = 0.03;
+const float SCAN       = 0.06;
+const float VIGNETTE   = 0.07;
+const float GRAIN      = 0.03;
+const float IRIS_HUE   = 0.18;
+const float LIMBAL     = 0.78;
+const float FIBERS     = 0.69;
+const float WET        = 0.54;
+const float BLOOM      = 0.92;
+const float ABERR      = 0.31;
+const float EMBERS     = 0.09;
+const float GODRAYS    = 0.37;
+const float CRACKLE    = 0.31;
+const float SCENE_DARK = 0.26;
+
+float hash(float2 p){ p = fract(p * float2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+
+float vnoise(float2 p){
+    float2 i = floor(p);
+    float2 f = fract(p);
+    float a = hash(i);
+    float b = hash(i + float2(1.0, 0.0));
+    float c = hash(i + float2(0.0, 1.0));
+    float d = hash(i + float2(1.0, 1.0));
+    float2 u = f * f * (3.0 - 2.0 * f);
+    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+}
+
+float fbm(float2 p){
+    float v = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 5; i++) {
+        if (u_quality < 0.5 && i >= 3) { break; }
+        v += a * vnoise(p);
+        p *= 2.02;
+        a *= 0.5;
+    }
+    return v;
+}
+
+// ridged fbm for light cracks and branching veins
+float rfbm(float2 p){
+    float v = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 5; i++) {
+        if (u_quality < 0.5 && i >= 3) { break; }
+        float n = abs(2.0 * vnoise(p) - 1.0);
+        n = 1.0 - n;
+        v += a * n * n;
+        p *= 2.03;
+        a *= 0.5;
+    }
+    return v;
+}
+
+// full-detail fbm for the eye surface + tears; called ONLY inside gated
+// regions (eye / narrow tear strip), so its extra octaves cost almost nothing.
+float fbmHQ(float2 p){
+    float v = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 5; i++) {
+        v += a * vnoise(p);
+        p *= 2.02;
+        a *= 0.5;
+    }
+    return v;
+}
+
+float embers(float2 uv, float t){
+    float e = 0.0;
+    for (int i = 0; i < 3; i++) {
+        float fi = float(i);
+        float sc = 7.0 + fi * 6.0;
+        float2 g = uv * sc;
+        g.y -= t * (0.25 + 0.12 * fi);
+        float2 id = floor(g);
+        float2 f = fract(g);
+        float h = hash(id + fi * 23.0);
+        float2 c = float2(0.5 + 0.32 * sin(h * 40.0 + t * 0.7), 0.5);
+        float dd = length(f - c);
+        float tw = 0.55 + 0.45 * sin(t * 3.0 + h * 60.0);
+        e += (1.0 - smoothstep(0.0, 0.16, dd)) * step(0.62, h) * tw * (0.7 - 0.18 * fi);
+    }
+    return e;
+}
+
+float godrays(float2 uv, float t){
+    float a = atan(uv.y, uv.x);
+    float r = length(uv);
+    float ray = 0.5 + 0.5 * sin(a * 9.0 + fbm(uv * 2.0) * 4.0 + t * 0.1);
+    ray = pow(ray, 2.2);
+    return ray * (1.0 - smoothstep(0.05, 1.15, r));
+}
+
+half4 main(float2 fragCoord){
+    float2 uv = (fragCoord - 0.5 * u_resolution) / u_resolution.y;
+    uv.y = -uv.y; // AGSL/Skia is Y-down; flip to match the WebGL lab so tears fall downward
+    float T = u_time;
+
+    // horizontal glitch band
+    float gseed = hash(float2(floor(uv.y * 32.0), floor(T * 14.0)));
+    float gband = step(1.0 - GLITCH * 0.22, gseed);
+    uv.x += gband * (hash(float2(gseed, T)) - 0.5) * 0.18 * GLITCH;
+
+    float rad = length(uv);
+
+    // LCL fog. Rotate the sample domain + scroll diagonally so the value-noise
+    // grid ridges don't line up with the axes (that produced a fixed vertical
+    // stripe when a layer scrolled along only one axis).
+    float2 fp1 = float2(uv.x * 0.80 - uv.y * 0.60, uv.x * 0.60 + uv.y * 0.80);
+    float2 fp2 = float2(uv.x * 0.60 + uv.y * 0.80, -uv.x * 0.80 + uv.y * 0.60);
+    float fog = fbm(fp1 * 3.0 + float2(T * 0.035, T * 0.06));
+    fog *= fbm(fp2 * 6.5 + float2(-T * 0.05, T * 0.04));
+    float glow = 1.0 - smoothstep(0.0, 1.15, rad);
+    float gr = godrays(uv, T);
+    float em = embers(uv, T) * EMBERS;
+    float crack = smoothstep(0.93, 1.0, rfbm(uv * 2.6 + float2(11.0, T * 0.02))) * CRACKLE;
+
+    // eyelid geometry
+    float w = 0.42 * EYE_SIZE;
+    float h = 0.23 * EYE_SIZE;
+    float bt = T * BLINK;
+    float ct = fract(bt);
+    float bw = smoothstep(0.0, 0.04, ct) * (1.0 - smoothstep(0.08, 0.15, ct));
+    float openA = 1.0 - bw;
+    h *= max(openA, 0.0);
+    float xn = clamp(uv.x / w, -1.0, 1.0);
+    float lid = h * (1.0 - xn * xn);
+    float eyeMask = (1.0 - smoothstep(0.0, 0.006, abs(uv.y) - lid)) * step(abs(uv.x), w);
+    float rimShadow = (1.0 - smoothstep(0.0, 0.03, abs(abs(uv.y) - lid))) * step(abs(uv.x), w) * eyeMask;
+
+    // iris / pupil
+    float d = length(uv);
+    float irisR = 0.15 * EYE_SIZE;
+    float rr = clamp(d / irisR, 0.0, 1.4);
+    // expensive iris noise: only near the eye (skipped for the rest of screen)
+    float strand = 0.0;
+    float crypts = 0.0;
+    float rays = 0.0;
+    if (eyeMask > 0.0) {
+        float aa = atan(uv.y, uv.x);
+        strand = fbmHQ(float2(aa * 40.0, rr * 4.0));
+        crypts = fbmHQ(float2(aa * 15.0 + 7.0, rr * 6.0));
+        rays = 0.5 + 0.5 * sin(aa * 36.0 + strand * 3.0);
+    }
+    float fib = mix(0.6, strand * (0.35 + 0.85 * rays), FIBERS);
+    float irisGrad = 1.0 - smoothstep(0.0, 1.0, rr);
+    float collar = 1.0 - smoothstep(0.0, 0.07, abs(rr - 0.42));
+    float limbal = smoothstep(0.72, 1.0, rr);
+    float irisMask = 1.0 - smoothstep(irisR - 0.010, irisR, d);
+    float pupilR = irisR * (0.26 + 0.5 * PUPIL) * (1.0 + 0.14 * sin(T * PULSE));
+    float pupilMask = 1.0 - smoothstep(pupilR - 0.006, pupilR, d);
+
+    // catchlights (wet)
+    float2 hlp = float2(-0.045 * EYE_SIZE, 0.075 * EYE_SIZE);
+    float hl = 1.0 - smoothstep(0.0, 0.032, length(uv - hlp));
+    float hl2 = 1.0 - smoothstep(0.0, 0.013, length(uv - float2(0.03, -0.028) * EYE_SIZE));
+
+    // veins converge toward corners
+    // vein noise: only inside the eye white (skipped elsewhere)
+    float cornerBias = smoothstep(w * 0.4, w, abs(uv.x));
+    float veinLine = 0.0;
+    if (eyeMask > 0.0) {
+        veinLine = smoothstep(0.55, 0.95, rfbm(uv * float2(20.0, 10.0) + 3.0));
+        veinLine *= 0.35 + 0.65 * cornerBias;
+    }
+
+    // spherical shading of the eyeball
+    float sphere = 1.0 - smoothstep(0.0, max(lid, 0.0001), abs(uv.y));
+
+    // ==== 3D Falling Tears Simulation ====
+    float tearField = 0.0;
+    float tearSpecular = 0.0;
+    
+    // Only compute tears if we are in the active area below the eye
+    if (uv.y < 0.02 && abs(uv.x) < w * 1.4) {
+        // Reduced to 3 columns/tracks for less clutter
+        for (int i = 0; i < 3; i++) {
+            float fi = float(i);
+            
+            // X coordinate of the track (evenly spaced horizontally)
+            float trackX = mix(-w * 0.7, w * 0.7, (fi + 0.5) / 3.0);
+            trackX += sin(uv.y * 12.0 + T * 1.2 + fi * 9.1) * 0.003;
+            
+            float seed = fi * 53.29;
+            // Extremely slow drifting speed (weightlessness)
+            float speed = 0.025 + hash(float2(seed, 2.3)) * 0.012;
+            // Long delay between drifting drops
+            float delay = hash(float2(seed, 6.7)) * 25.0;
+            
+            float t = T * speed + delay;
+            float fractPart = fract(t);
+            
+            // Active for 35% of the cycle, inactive for 65% (gentle intervals)
+            float activeDuty = 0.35;
+            float dropActive = step(fractPart, activeDuty);
+            float progress = fractPart / activeDuty;
+            
+            float xn = clamp(trackX / w, -1.0, 1.0);
+            float baseH = 0.23 * EYE_SIZE;
+            float startY = -baseH * (1.0 - xn * xn);
+            
+            float dropY = startY;
+            float trailTop = startY;
+            float trailFade = 1.0;
+            
+            if (progress < 0.20) {
+                // Phase 1: Growing/stretching drop (attached to eyelid)
+                float pStretch = progress / 0.20;
+                dropY = startY - pStretch * 0.02;
+                trailTop = startY;
+                trailFade = 1.0;
+            } else {
+                // Phase 2: Detached and slowly drifting down in zero gravity
+                float pFall = (progress - 0.20) / 0.80;
+                dropY = startY - 0.02 - pFall * 0.48;    // drifts slowly down off the screen
+                trailTop = startY - pFall * 0.65;       // trail top recedes to detach
+                trailFade = max(0.0, 1.0 - pFall * 2.0); // trail fades out
+            }
+            
+            float2 dropPos = float2(trackX, dropY);
+            float2 diff = uv - dropPos;
+            
+            // Perturb the distance with a combination of angular waves and noise for organic wobble
+            float angle = atan(diff.y, diff.x);
+            float distortion = sin(angle * 4.0 + T * 2.5 + seed) * 0.0008;
+            distortion += vnoise(uv * 50.0 + T * 1.5 + seed) * 0.0015;
+            float dDrop = length(diff) + distortion;
+            
+            // 1. Bulb shape
+            float bulb = 1.0 - smoothstep(0.006, 0.012, dDrop);
+            
+            // 2. Beaded trail
+            float inTrail = step(dropY, uv.y) * step(uv.y, trailTop);
+            float distToCenterLine = abs(uv.x - trackX);
+            float bead = sin(uv.y * 150.0 - T * 12.0);
+            float trailWidth = mix(0.0035, 0.0012, (startY - uv.y) / (startY - dropY + 0.001));
+            trailWidth *= 0.65 + 0.35 * bead;
+            float trail = (1.0 - smoothstep(trailWidth - 0.001, trailWidth + 0.001, distToCenterLine)) * inTrail;
+            
+            // Combine, fade out inside the eye with verticalMask and only render during active phase
+            float verticalMask = smoothstep(startY, startY - 0.012, uv.y);
+            float dropIntensity = max(bulb, trail * trailFade) * verticalMask * dropActive;
+            
+            tearField = max(tearField, dropIntensity);
+            
+            // 3. Highlight calculations (clean 3D specular)
+            float3 lightDir = normalize(float3(-1.0, 1.2, 1.8));
+            if (dDrop < 0.015 && dropActive > 0.5) {
+                float2 n2 = diff / 0.015;
+                float3 normal = normalize(float3(n2.x, n2.y, sqrt(max(0.0, 1.0 - dot(n2, n2)))));
+                float spec = pow(max(0.0, dot(reflect(vec3(0.0, 0.0, -1.0), normal), lightDir)), 14.0);
+                tearSpecular = max(tearSpecular, spec * bulb * verticalMask);
+            }
+            
+            if (trail > 0.01 && dropActive > 0.5) {
+                float trailNormalX = (uv.x - trackX) / (trailWidth + 0.0001);
+                float trailSpec = pow(max(0.0, -trailNormalX), 5.0) * trail * 0.45;
+                tearSpecular = max(tearSpecular, trailSpec * verticalMask * trailFade);
+            }
+        }
+    }
+
+    float3 col;
+    if (u_light < 0.5) {
+        // ===== DARK THEME =====
+        col = float3(0.016, 0.0, 0.006) * mix(1.0, 0.45, SCENE_DARK);
+        col += float3(0.5, 0.02, 0.06) * glow * 0.55 * BLOOD;
+        col += float3(0.42, 0.015, 0.05) * fog * FOG * 0.8;
+        col += float3(0.6, 0.05, 0.08) * gr * GODRAYS * 0.2;
+        col += float3(1.0, 0.35, 0.12) * em * 0.5;
+        col += float3(0.9, 0.1, 0.12) * crack * 0.6;
+
+        float3 sclera = mix(float3(0.26, 0.035, 0.045), float3(0.5, 0.02, 0.03), veinLine * VEINS);
+        sclera *= (0.45 + 0.65 * sphere);
+        float3 irisDeep = float3(0.06, 0.0, 0.0);
+        float3 irisMid = mix(float3(0.66, 0.06, 0.05), float3(0.85, 0.4, 0.06), IRIS_HUE);
+        float3 iris = mix(irisDeep, irisMid, pow(irisGrad, 0.7));
+        iris *= (0.55 + 0.7 * fib * IRIS);
+        iris = mix(iris, iris * 0.35, crypts * 0.5);
+        iris += collar * float3(0.6, 0.22, 0.05) * 0.35;
+        iris = mix(iris, irisDeep * 0.35, limbal * LIMBAL);
+        float3 eye = sclera;
+        eye = mix(eye, iris, irisMask);
+        eye = mix(eye, float3(0.0), pupilMask);
+        eye += (hl * 0.25 + hl2 * 0.15) * WET;
+        col = mix(col, eye, eyeMask);
+        col = mix(col, float3(0.0), rimShadow * 0.55);
+
+        // Tears are barely visible (almost transparent) by multiplying with 0.16
+        float tears = clamp(tearField * TEAR_AMT, 0.0, 1.0) * 0.16;
+        float3 tearCol = mix(float3(0.55, 0.0, 0.03), float3(0.95, 0.15, 0.08), tears);
+        col = mix(col, tearCol, tears);
+        col += float3(1.0, 0.6, 0.5) * tearSpecular * WET * 0.30;
+
+        float vig = 1.0 - smoothstep(0.2, 1.25, rad);
+        col *= mix(1.0, vig, clamp(VIGNETTE, 0.0, 1.5));
+    } else {
+        // ===== LIGHT THEME (ashen apocalypse) =====
+        float3 bg = mix(float3(0.82, 0.77, 0.74), float3(0.5, 0.42, 0.42), SCENE_DARK * 0.6);
+        bg -= float3(0.06, 0.07, 0.08) * fog * 0.4;
+        col = bg;
+        float stain = clamp(fog * FOG * 0.8, 0.0, 1.0);
+        col = mix(col, float3(0.42, 0.02, 0.05), stain * 0.55);
+        col = mix(col, float3(0.5, 0.0, 0.04), glow * 0.3 * BLOOD);
+        col = mix(col, float3(0.55, 0.05, 0.06), gr * GODRAYS * 0.15);
+        col += float3(0.8, 0.2, 0.08) * em * 0.28;
+        col = mix(col, float3(0.6, 0.02, 0.05), crack * 0.4);
+
+        float3 sclera = mix(float3(0.84, 0.68, 0.66), float3(0.6, 0.06, 0.06), veinLine * VEINS * 0.75);
+        sclera *= (0.7 + 0.4 * sphere);
+        float3 irisDeep = float3(0.05, 0.0, 0.0);
+        float3 irisMid = mix(float3(0.5, 0.03, 0.03), float3(0.62, 0.28, 0.05), IRIS_HUE);
+        float3 iris = mix(irisDeep, irisMid, pow(irisGrad, 0.7));
+        iris *= (0.55 + 0.7 * fib * IRIS);
+        iris = mix(iris, iris * 0.35, crypts * 0.5);
+        iris += collar * float3(0.5, 0.18, 0.04) * 0.3;
+        iris = mix(iris, irisDeep * 0.4, limbal * LIMBAL);
+        float3 eye = sclera;
+        eye = mix(eye, iris, irisMask);
+        eye = mix(eye, float3(0.02, 0.0, 0.0), pupilMask);
+        eye += (hl * 0.12 + hl2 * 0.08) * WET;
+        col = mix(col, eye, eyeMask);
+        col = mix(col, float3(0.2, 0.0, 0.02), rimShadow * 0.7);
+
+        // Tears are barely visible (almost transparent) by multiplying with 0.14
+        float tears = clamp(tearField * TEAR_AMT, 0.0, 1.0) * 0.14;
+        float3 tearCol = mix(float3(0.5, 0.0, 0.03), float3(0.35, 0.0, 0.02), tears);
+        col = mix(col, tearCol, tears);
+        col += float3(0.95, 0.5, 0.45) * tearSpecular * WET * 0.20;
+
+        float vig = 1.0 - smoothstep(0.25, 1.3, rad);
+        col = mix(col, col * float3(0.6, 0.42, 0.42), (1.0 - vig) * clamp(VIGNETTE, 0.0, 1.5));
+    }
+
+    // ---- post ----
+    float3 bright = max(col - 0.6, float3(0.0));
+    col += bright * BLOOM;
+    col.r *= 1.0 + ABERR * rad * 0.35;
+    col.b *= 1.0 - ABERR * rad * 0.22;
+    float sl = 0.5 + 0.5 * sin(fragCoord.y * 3.14159);
+    col *= 1.0 - SCAN * 0.38 * sl;
+    col += (hash(fragCoord + fract(T)) - 0.5) * GRAIN;
+    col = max(col, float3(0.0));
+    return half4(col.r, col.g, col.b, 1.0);
+}

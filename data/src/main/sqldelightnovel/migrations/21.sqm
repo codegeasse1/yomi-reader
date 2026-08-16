@@ -1,0 +1,16 @@
+CREATE TABLE novel_books (
+    novel_id INTEGER NOT NULL PRIMARY KEY,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    book_version INTEGER NOT NULL DEFAULT 0,
+    source_id INTEGER NOT NULL DEFAULT 0,
+    chapter_set_hash TEXT NOT NULL DEFAULT '',
+    total_chars INTEGER NOT NULL DEFAULT 0,
+    chapter_count INTEGER NOT NULL DEFAULT 0,
+    char_offset INTEGER NOT NULL DEFAULT 0,
+    last_chapter_id INTEGER,
+    complete INTEGER NOT NULL DEFAULT 0,
+    built_at INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY(novel_id) REFERENCES novels (_id)
+    ON DELETE CASCADE
+);

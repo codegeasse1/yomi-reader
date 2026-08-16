@@ -1,0 +1,136 @@
+package eu.kanade.presentation.entries.components
+
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.painter.ColorPainter
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
+import eu.kanade.presentation.components.CoverReloadSignal
+import eu.kanade.presentation.components.buildAuroraCoverImageRequest
+import eu.kanade.presentation.components.rememberThemeAwareCoverErrorPainter
+import eu.kanade.presentation.entries.components.aurora.rememberAuroraPosterColorFilter
+import tachiyomi.domain.entries.anime.model.AnimeCover
+import tachiyomi.domain.entries.manga.model.MangaCover
+import tachiyomi.domain.entries.novel.model.NovelCover
+import tachiyomi.presentation.core.util.LocalAppHaptics
+
+enum class ItemCover(val ratio: Float) {
+    Square(1f / 1f),
+    Book(2f / 3f),
+    Thumb(16f / 9f),
+    ;
+
+    @Composable
+    operator fun invoke(
+        data: Any?,
+        modifier: Modifier = Modifier,
+        contentDescription: String = "",
+        shape: Shape = MaterialTheme.shapes.extraSmall,
+        onClick: (() -> Unit)? = null,
+        errorPainter: Painter? = null,
+    ) {
+        val model = resolveCoverModel(data)
+        val appHaptics = LocalAppHaptics.current
+        val imageModifier = modifier
+            .aspectRatio(ratio)
+            .clip(shape)
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(
+                        role = Role.Button,
+                        onClick = {
+                            appHaptics.tap()
+                            onClick()
+                        },
+                    )
+                } else {
+                    Modifier
+                },
+            )
+
+        val resolvedErrorPainter = errorPainter ?: rememberThemeAwareCoverErrorPainter()
+        val context = LocalContext.current
+
+        if (isLoadableCoverData(model)) {
+            val coverReloadTick = CoverReloadSignal.tick.value
+            val coverRequest = remember(context, model, coverReloadTick) {
+                buildAuroraCoverImageRequest(context, model)
+            }
+            // Don't pass a `placeholder` painter directly: Coil's transformOf()
+            // would unconditionally override the painter restored via
+            // `placeholderMemoryCacheKey`, causing a gray flash even for covers
+            // that are already in the memory cache. This transform only falls
+            // back to the flat placeholder when no memory-cached cover is
+            // available, and maps error/fallback states to the error painter.
+            val transform = remember(resolvedErrorPainter) {
+                { state: AsyncImagePainter.State ->
+                    when (state) {
+                        is AsyncImagePainter.State.Loading ->
+                            if (state.painter == null) {
+                                state.copy(painter = CoverPlaceholderPainter)
+                            } else {
+                                state
+                            }
+                        is AsyncImagePainter.State.Error -> state.copy(painter = resolvedErrorPainter)
+                        else -> state
+                    }
+                }
+            }
+            AsyncImage(
+                model = coverRequest,
+                transform = transform,
+                contentDescription = contentDescription,
+                modifier = imageModifier,
+                contentScale = ContentScale.Crop,
+                colorFilter = rememberAuroraPosterColorFilter(),
+            )
+        } else {
+            Image(
+                painter = resolvedErrorPainter,
+                contentDescription = contentDescription,
+                modifier = imageModifier,
+                contentScale = ContentScale.Crop,
+            )
+        }
+    }
+}
+
+internal fun resolveCoverModel(data: Any?): Any? {
+    return when (data) {
+        is String -> data.takeIf { it.isNotBlank() }
+        // Keep cover data classes even with blank URLs — let NovelCoverFetcher
+        // (or the equivalent fetcher) decide how to handle them. This avoids
+        // skipping the AsyncImage loading pipeline entirely and showing the
+        // error painter before the fetcher has a chance to run.
+        is AnimeCover -> data
+        is MangaCover -> data
+        is NovelCover -> data
+        else -> data
+    }
+}
+
+internal fun isLoadableCoverData(data: Any?): Boolean {
+    return when (data) {
+        null -> false
+        is String -> data.isNotBlank()
+        is NovelCover -> !data.url.isNullOrBlank() || data.isNovelFavorite
+        is AnimeCover -> !data.url.isNullOrBlank() || data.isAnimeFavorite
+        is MangaCover -> !data.url.isNullOrBlank() || data.isMangaFavorite
+        else -> true
+    }
+}
+
+private val CoverPlaceholderColor = Color(0x1F888888)
+private val CoverPlaceholderPainter = ColorPainter(CoverPlaceholderColor)

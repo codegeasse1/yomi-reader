@@ -1,0 +1,428 @@
+package eu.kanade.tachiyomi.extension.novel
+
+import eu.kanade.tachiyomi.extension.novel.api.NovelPluginApiFacade
+import eu.kanade.tachiyomi.extension.novel.runtime.NovelPluginCapabilities
+import eu.kanade.tachiyomi.extension.novel.runtime.NovelPluginCapabilitySource
+import eu.kanade.tachiyomi.novelsource.NovelSource
+import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
+import org.junit.jupiter.api.Test
+import tachiyomi.data.extension.novel.NovelPluginInstallerFacade
+import tachiyomi.data.extension.novel.toInstalled
+import tachiyomi.domain.extension.novel.model.NovelPlugin
+import tachiyomi.domain.extension.novel.repository.NovelPluginRepository
+
+class DefaultNovelExtensionManagerTest {
+
+    @Test
+    fun `remove saved repo entries removes both pkg and id keys`() {
+        val entries = setOf(
+            "pkg.name|https://old.example|Old Repo",
+            "plugin.id|https://old.example|Old Repo",
+            "other.id|https://other.example|Other Repo",
+        )
+
+        removeNovelInstalledRepoEntries(
+            entries = entries,
+            key = "pkg.name",
+            alternateKey = "plugin.id",
+        ) shouldBe setOf("other.id|https://other.example|Other Repo")
+    }
+
+    @Test
+    fun `refreshAvailablePlugins updates available flow`() = runTest {
+        val repo = FakePluginRepository()
+        val api = FakePluginApi(
+            listOf(
+                NovelPlugin.Available(
+                    id = "one",
+                    name = "One",
+                    site = "https://one.example",
+                    lang = "en",
+                    versionCode = 1,
+                    versionName = "1.0.0",
+                    url = "https://one.example/plugin.js",
+                    iconUrl = null,
+                    customJs = null,
+                    customCss = null,
+                    hasSettings = false,
+                    sha256 = "aaa",
+                    repoUrl = "https://repo.one",
+                ),
+            ),
+        )
+        val installer = FakePluginInstaller(repo)
+        val sourceFactory = FakeSourceFactory()
+
+        val manager = DefaultNovelExtensionManager(repo, api, installer, sourceFactory)
+
+        manager.refreshAvailablePlugins()
+
+        val available = manager.availablePluginsFlow.first { it.isNotEmpty() }
+        available.size shouldBe 1
+        available.first().id shouldBe "one"
+    }
+
+    @Test
+    fun `installPlugin updates installed flow`() = runTest {
+        val repo = FakePluginRepository()
+        val api = FakePluginApi(emptyList())
+        val installer = FakePluginInstaller(repo)
+        val sourceFactory = FakeSourceFactory()
+        val manager = DefaultNovelExtensionManager(repo, api, installer, sourceFactory)
+
+        val plugin = NovelPlugin.Available(
+            id = "two",
+            name = "Two",
+            site = "https://two.example",
+            lang = "ru",
+            versionCode = 2,
+            versionName = "2.0.0",
+            url = "https://two.example/plugin.js",
+            iconUrl = null,
+            customJs = null,
+            customCss = null,
+            hasSettings = false,
+            sha256 = "bbb",
+            repoUrl = "https://repo.two",
+        )
+
+        manager.installPlugin(plugin)
+
+        val installed = manager.installedPluginsFlow.first { it.isNotEmpty() }
+        installed.first().id shouldBe "two"
+    }
+
+    @Test
+    fun `refreshAvailablePlugins updates updates flow`() = runTest {
+        val repo = FakePluginRepository().apply {
+            upsert(
+                NovelPlugin.Installed(
+                    id = "three",
+                    name = "Three",
+                    site = "https://three.example",
+                    lang = "en",
+                    versionCode = 1,
+                    versionName = "1.0.0",
+                    url = "https://three.example/plugin.js",
+                    iconUrl = null,
+                    customJs = null,
+                    customCss = null,
+                    hasSettings = false,
+                    sha256 = "ccc",
+                    repoUrl = "https://repo.three",
+                ),
+            )
+        }
+        val api = FakePluginApi(
+            listOf(
+                NovelPlugin.Available(
+                    id = "three",
+                    name = "Three",
+                    site = "https://three.example",
+                    lang = "en",
+                    versionCode = 2,
+                    versionName = "2.0.0",
+                    url = "https://three.example/plugin.js",
+                    iconUrl = null,
+                    customJs = null,
+                    customCss = null,
+                    hasSettings = false,
+                    sha256 = "ccc",
+                    repoUrl = "https://repo.three",
+                ),
+            ),
+        )
+        val installer = FakePluginInstaller(repo)
+        val sourceFactory = FakeSourceFactory()
+        val manager = DefaultNovelExtensionManager(repo, api, installer, sourceFactory)
+
+        manager.refreshAvailablePlugins()
+
+        val updates = manager.updatesFlow.first { it.isNotEmpty() }
+        updates.size shouldBe 1
+        updates.first().id shouldBe "three"
+    }
+
+    @Test
+    fun `installed plugins are mapped into sources`() = runTest {
+        val repo = FakePluginRepository()
+        val api = FakePluginApi(emptyList())
+        val installer = FakePluginInstaller(repo)
+        val sourceFactory = FakeSourceFactory()
+        val manager = DefaultNovelExtensionManager(repo, api, installer, sourceFactory)
+
+        repo.upsert(
+            NovelPlugin.Installed(
+                id = "source-one",
+                name = "Source One",
+                site = "https://one.example",
+                lang = "en",
+                versionCode = 1,
+                versionName = "1.0.0",
+                url = "https://one.example/plugin.js",
+                iconUrl = null,
+                customJs = null,
+                customCss = null,
+                hasSettings = false,
+                sha256 = "aaa",
+                repoUrl = "https://repo.one",
+            ),
+        )
+
+        val sources = manager.installedSourcesFlow.first { it.isNotEmpty() }
+        sources.size shouldBe 1
+        sources.first().id shouldBe sourceFactory.sourceIdFor("source-one")
+    }
+
+    @Test
+    fun `getSourceData returns stub for installed plugin`() = runTest {
+        val repo = FakePluginRepository()
+        val api = FakePluginApi(emptyList())
+        val installer = FakePluginInstaller(repo)
+        val sourceFactory = FakeSourceFactory()
+        val manager = DefaultNovelExtensionManager(repo, api, installer, sourceFactory)
+
+        val installed = NovelPlugin.Installed(
+            id = "source-two",
+            name = "Source Two",
+            site = "https://two.example",
+            lang = "ru",
+            versionCode = 1,
+            versionName = "1.0.0",
+            url = "https://two.example/plugin.js",
+            iconUrl = null,
+            customJs = null,
+            customCss = null,
+            hasSettings = false,
+            sha256 = "bbb",
+            repoUrl = "https://repo.two",
+        )
+        repo.upsert(installed)
+
+        val stub = manager.getSourceData(sourceFactory.sourceIdFor(installed.id))
+
+        stub?.id shouldBe sourceFactory.sourceIdFor(installed.id)
+        stub?.lang shouldBe installed.lang
+        stub?.name shouldBe installed.name
+    }
+
+    @Test
+    fun `getCapabilitiesForSource returns capabilities for capability-bearing source`() = runTest {
+        val repo = FakePluginRepository()
+        val api = FakePluginApi(emptyList())
+        val installer = FakePluginInstaller(repo)
+        val expectedCapabilities = NovelPluginCapabilities(
+            hasParsePage = true,
+            hasResolveUrl = false,
+            hasFetchImage = true,
+        )
+        val sourceFactory = FakeSourceFactory(capabilities = expectedCapabilities)
+        val manager = DefaultNovelExtensionManager(repo, api, installer, sourceFactory)
+
+        val installed = NovelPlugin.Installed(
+            id = "capable-source",
+            name = "Capable Source",
+            site = "https://capable.example",
+            lang = "en",
+            versionCode = 1,
+            versionName = "1.0.0",
+            url = "https://capable.example/plugin.js",
+            iconUrl = null,
+            customJs = null,
+            customCss = null,
+            hasSettings = false,
+            sha256 = "ddd",
+            repoUrl = "https://repo.capable",
+        )
+        repo.upsert(installed)
+
+        val sources = manager.installedSourcesFlow.first { it.isNotEmpty() }
+        val sourceId = sources.first().id
+
+        val capabilities = manager.getCapabilitiesForSource(sourceId)
+
+        capabilities shouldBe expectedCapabilities
+    }
+
+    @Test
+    fun `getCapabilitiesForSource returns null for non-capability source`() = runTest {
+        val repo = FakePluginRepository()
+        val api = FakePluginApi(emptyList())
+        val installer = FakePluginInstaller(repo)
+        val sourceFactory = FakeSourceFactory(capabilities = null)
+        val manager = DefaultNovelExtensionManager(repo, api, installer, sourceFactory)
+
+        val installed = NovelPlugin.Installed(
+            id = "basic-source",
+            name = "Basic Source",
+            site = "https://basic.example",
+            lang = "en",
+            versionCode = 1,
+            versionName = "1.0.0",
+            url = "https://basic.example/plugin.js",
+            iconUrl = null,
+            customJs = null,
+            customCss = null,
+            hasSettings = false,
+            sha256 = "eee",
+            repoUrl = "https://repo.basic",
+        )
+        repo.upsert(installed)
+
+        val sources = manager.installedSourcesFlow.first { it.isNotEmpty() }
+        val sourceId = sources.first().id
+
+        val capabilities = manager.getCapabilitiesForSource(sourceId)
+
+        capabilities shouldBe null
+    }
+
+    @Test
+    fun `getCapabilitiesForSource returns null for unknown source id`() = runTest {
+        val repo = FakePluginRepository()
+        val api = FakePluginApi(emptyList())
+        val installer = FakePluginInstaller(repo)
+        val sourceFactory = FakeSourceFactory()
+        val manager = DefaultNovelExtensionManager(repo, api, installer, sourceFactory)
+
+        val capabilities = manager.getCapabilitiesForSource(999L)
+
+        capabilities shouldBe null
+    }
+
+    private class FakePluginApi(
+        private val plugins: List<NovelPlugin.Available>,
+    ) : NovelPluginApiFacade {
+        override suspend fun fetchAvailablePlugins(): List<NovelPlugin.Available> = plugins
+        override val repoFetchErrors: Flow<Map<String, String>> = flowOf(emptyMap())
+    }
+
+    @Test
+    fun `reportSignatureMismatch emits event with candidate`() = runTest {
+        val repo = FakePluginRepository()
+        val api = FakePluginApi(
+            listOf(
+                NovelPlugin.Available(
+                    id = "one",
+                    name = "One",
+                    site = "https://one.example",
+                    lang = "ru",
+                    versionCode = 3,
+                    versionName = "3.0.0",
+                    url = "https://one.example/plugin.js",
+                    iconUrl = null,
+                    customJs = null,
+                    customCss = null,
+                    hasSettings = false,
+                    sha256 = "aaa",
+                    repoUrl = "https://repo.one",
+                ),
+            ),
+        )
+        val installer = FakePluginInstaller(repo)
+        val sourceFactory = FakeSourceFactory()
+        val manager = DefaultNovelExtensionManager(repo, api, installer, sourceFactory)
+        repo.upsert(
+            NovelPlugin.Installed(
+                id = "one",
+                name = "One",
+                site = "https://one.example",
+                lang = "ru",
+                versionCode = 2,
+                versionName = "2.0.0",
+                url = "https://one.example/plugin.js",
+                iconUrl = null,
+                customJs = null,
+                customCss = null,
+                hasSettings = false,
+                sha256 = "aaa",
+                repoUrl = "https://repo.one",
+                isNsfw = false,
+                isKotlinExtension = false,
+                pkgName = null,
+            ),
+        )
+        manager.refreshAvailablePlugins()
+        manager.availablePluginsFlow.first { it.isNotEmpty() }
+
+        val eventDeferred = async { manager.signatureMismatchEvents.first() }
+        yield() // let the collector subscribe before the emission
+        manager.reportSignatureMismatch("one")
+
+        val event = eventDeferred.await()
+        event.pluginId shouldBe "one"
+        event.displayName shouldBe "One"
+        event.candidate?.versionCode shouldBe 3
+    }
+
+    private class FakePluginInstaller(
+        private val repository: NovelPluginRepository,
+    ) : NovelPluginInstallerFacade {
+        override suspend fun install(plugin: NovelPlugin.Available): NovelPlugin.Installed {
+            val installed = plugin.toInstalled()
+            repository.upsert(installed)
+            return installed
+        }
+
+        override suspend fun uninstall(pluginId: String) {
+            repository.delete(pluginId)
+        }
+    }
+
+    private class FakePluginRepository : NovelPluginRepository {
+        private val state = MutableStateFlow<List<NovelPlugin.Installed>>(emptyList())
+
+        override fun subscribeAll(): Flow<List<NovelPlugin.Installed>> = state
+
+        override suspend fun getAll(): List<NovelPlugin.Installed> = state.value
+
+        override suspend fun getById(id: String): NovelPlugin.Installed? {
+            return state.value.firstOrNull { it.id == id }
+        }
+
+        override suspend fun upsert(plugin: NovelPlugin.Installed) {
+            val updated = state.value.filterNot { it.id == plugin.id } + plugin
+            state.value = updated
+        }
+
+        override suspend fun delete(id: String) {
+            state.value = state.value.filterNot { it.id == id }
+        }
+    }
+
+    private class FakeSourceFactory(
+        private val capabilities: NovelPluginCapabilities? = null,
+    ) : NovelPluginSourceFactory {
+        override fun create(plugin: NovelPlugin.Installed): NovelSource {
+            return if (capabilities != null) {
+                FakeSourceWithCapabilities(sourceIdFor(plugin.id), plugin.name, plugin.lang, capabilities)
+            } else {
+                FakeSource(sourceIdFor(plugin.id), plugin.name, plugin.lang)
+            }
+        }
+
+        fun sourceIdFor(pluginId: String): Long = NovelPluginId.toSourceId(pluginId)
+    }
+
+    private data class FakeSource(
+        override val id: Long,
+        override val name: String,
+        override val lang: String,
+    ) : NovelSource
+
+    private data class FakeSourceWithCapabilities(
+        override val id: Long,
+        override val name: String,
+        override val lang: String,
+        private val caps: NovelPluginCapabilities,
+    ) : NovelSource, NovelPluginCapabilitySource {
+        override val pluginCapabilities: NovelPluginCapabilities = caps
+    }
+}

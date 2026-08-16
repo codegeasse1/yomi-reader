@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="eventhorizon_primary">#1A4FE0</color>
+    <color name="eventhorizon_onPrimary">#FFFFFF</color>
+    <color name="eventhorizon_primaryContainer">#0A2E8C</color>
+    <color name="eventhorizon_onPrimaryContainer">#B9D3FF</color>
+    <color name="eventhorizon_secondary">#7A5CFF</color>
+    <color name="eventhorizon_onSecondary">#FFFFFF</color>
+    <color name="eventhorizon_secondaryContainer">#3B24A6</color>
+    <color name="eventhorizon_onSecondaryContainer">#DBD3FF</color>
+    <color name="eventhorizon_tertiary">#C9DFFF</color>
+    <color name="eventhorizon_onTertiary">#0B2C66</color>
+    <color name="eventhorizon_tertiaryContainer">#25418F</color>
+    <color name="eventhorizon_onTertiaryContainer">#D9E9FF</color>
+    <color name="eventhorizon_background">#000000</color>
+    <color name="eventhorizon_onBackground">#E8ECF8</color>
+    <color name="eventhorizon_surface">#05060C</color>
+    <color name="eventhorizon_onSurface">#E8ECF8</color>
+    <color name="eventhorizon_surfaceVariant">#141828</color>
+    <color name="eventhorizon_onSurfaceVariant">#B4BBD2</color>
+    <color name="eventhorizon_outline">#6F7694</color>
+    <color name="eventhorizon_inverseOnSurface">#1D2232</color>
+    <color name="eventhorizon_inverseSurface">#E5E9F4</color>
+    <color name="eventhorizon_primaryInverse">#4A78FF</color>
+    <color name="eventhorizon_elevationOverlay">@color/eventhorizon_primary</color>
+</resources>

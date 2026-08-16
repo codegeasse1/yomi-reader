@@ -1,0 +1,5 @@
+package mihon.domain.extensionstore.manga.repository
+
+import mihon.domain.extensionstore.repository.ExtensionStoreRepository
+
+interface MangaExtensionStoreRepository : ExtensionStoreRepository

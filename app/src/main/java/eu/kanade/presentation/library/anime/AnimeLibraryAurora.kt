@@ -1,0 +1,618 @@
+package eu.kanade.presentation.library.anime
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import eu.kanade.domain.ui.UiPreferences
+import eu.kanade.presentation.components.AuroraCard
+import eu.kanade.presentation.library.AURORA_LARGE_GRID_PERFORMANCE_THRESHOLD
+import eu.kanade.presentation.library.components.GlobalSearchItem
+import eu.kanade.presentation.library.components.GlowContourLibraryGridItem
+import eu.kanade.presentation.library.components.LazyLibraryGrid
+import eu.kanade.presentation.library.components.PinnedBadge
+import eu.kanade.presentation.library.components.PinnedSectionHeader
+import eu.kanade.presentation.library.components.containsAtLeastMatches
+import eu.kanade.presentation.library.components.globalSearchItem
+import eu.kanade.presentation.library.components.idsToHashSet
+import eu.kanade.presentation.library.components.resolveGlowContourCornerIndicatorState
+import eu.kanade.presentation.library.components.resolveGlowContourLibraryTextSpec
+import eu.kanade.presentation.library.components.shouldShowContinueViewingAction
+import eu.kanade.presentation.library.resolveAnimeLibraryCardProgressPercent
+import eu.kanade.presentation.theme.AuroraTheme
+import eu.kanade.presentation.theme.aurora.adaptive.auroraCenteredMaxWidth
+import eu.kanade.presentation.theme.aurora.adaptive.rememberAuroraAdaptiveSpec
+import eu.kanade.tachiyomi.animesource.model.SAnime
+import eu.kanade.tachiyomi.ui.library.anime.AnimeLibraryItem
+import tachiyomi.domain.entries.anime.model.AnimeCover
+import tachiyomi.domain.library.anime.LibraryAnime
+import tachiyomi.domain.library.model.AuroraLibraryCardStyle
+import tachiyomi.domain.library.model.LibraryDisplayMode
+import tachiyomi.domain.library.service.LibraryPreferences
+import tachiyomi.i18n.MR
+import tachiyomi.i18n.aniyomi.AYMR
+import tachiyomi.presentation.core.components.Badge
+import tachiyomi.presentation.core.components.BadgeGroup
+import tachiyomi.presentation.core.components.FastScrollLazyColumn
+import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.presentation.core.screens.EmptyScreen
+import tachiyomi.presentation.core.util.collectAsState
+import tachiyomi.presentation.core.util.plus
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.items as listItems
+
+@Composable
+fun AnimeLibraryAuroraContent(
+    items: List<AnimeLibraryItem>,
+    selection: List<LibraryAnime>,
+    selectedIds: Set<Long> = selection.idsToHashSet { it.id },
+    searchQuery: String?,
+    hasActiveFilters: Boolean,
+    displayMode: LibraryDisplayMode,
+    columns: Int,
+    onAnimeClicked: (Long) -> Unit,
+    onToggleSelection: (LibraryAnime) -> Unit,
+    onToggleRangeSelection: (LibraryAnime) -> Unit,
+    onTogglePinned: (AnimeLibraryItem) -> Unit,
+    onContinueWatchingClicked: ((LibraryAnime) -> Unit)?,
+    onGlobalSearchClicked: () -> Unit,
+    contentPadding: PaddingValues,
+    libraryPreferences: LibraryPreferences,
+) {
+    val auroraAdaptiveSpec = rememberAuroraAdaptiveSpec()
+    val auroraCardStyle by libraryPreferences.auroraLibraryCardStyle().collectAsState()
+    val uiPreferences = remember { Injekt.get<UiPreferences>() }
+    val enabledAuras by uiPreferences.enabledAuras().collectAsState()
+    val useGlowContourCards = auroraCardStyle == AuroraLibraryCardStyle.GlowContour
+    val useLargeGridPerformanceMode = items.size > AURORA_LARGE_GRID_PERFORMANCE_THRESHOLD
+
+    if (items.isEmpty()) {
+        AnimeLibraryAuroraEmptyScreen(
+            searchQuery = searchQuery,
+            hasActiveFilters = hasActiveFilters,
+            contentPadding = contentPadding,
+            onGlobalSearchClicked = onGlobalSearchClicked,
+        )
+        return
+    }
+
+    val safeColumns = columns.coerceAtLeast(0)
+    val isSelectionMode = selection.isNotEmpty()
+    val onClickAnime = { anime: LibraryAnime ->
+        if (isSelectionMode) {
+            onToggleSelection(anime)
+        } else {
+            onAnimeClicked(anime.anime.id)
+        }
+    }
+
+    when (displayMode) {
+        LibraryDisplayMode.List -> {
+            AnimeLibraryAuroraList(
+                items = items,
+                contentPadding = contentPadding,
+                selection = selection,
+                selectedIds = selectedIds,
+                searchQuery = searchQuery,
+                onGlobalSearchClicked = onGlobalSearchClicked,
+                onClick = onClickAnime,
+                onLongClick = onToggleRangeSelection,
+                onTogglePinned = onTogglePinned,
+                onClickContinueWatching = onContinueWatchingClicked,
+                listMaxWidthDp = auroraAdaptiveSpec.listMaxWidthDp,
+                horizontalPaddingDp = auroraAdaptiveSpec.contentHorizontalPaddingDp,
+            )
+        }
+
+        LibraryDisplayMode.CompactGrid,
+        -> {
+            if (useGlowContourCards) {
+                AnimeLibraryAuroraCardGrid(
+                    items = items,
+                    columns = safeColumns,
+                    contentPadding = contentPadding,
+                    selection = selection,
+                    selectedIds = selectedIds,
+                    searchQuery = searchQuery,
+                    onGlobalSearchClicked = onGlobalSearchClicked,
+                    showMetadata = true,
+                    onClick = onClickAnime,
+                    onLongClick = onToggleRangeSelection,
+                    onTogglePinned = onTogglePinned,
+                    onClickContinueWatching = onContinueWatchingClicked,
+                    listMaxWidthDp = auroraAdaptiveSpec.listMaxWidthDp,
+                    adaptiveMinCellDp = auroraAdaptiveSpec.compactGridAdaptiveMinCellDp,
+                    cardStyle = auroraCardStyle,
+                    glowDisplayMode = LibraryDisplayMode.CompactGrid,
+                    enabledAuras = enabledAuras,
+                    performanceMode = useLargeGridPerformanceMode,
+                )
+            } else {
+                AnimeLibraryCompactGrid(
+                    items = items,
+                    showTitle = true,
+                    columns = safeColumns,
+                    contentPadding = contentPadding,
+                    selection = selection,
+                    selectedIds = selectedIds,
+                    onClick = onClickAnime,
+                    onLongClick = onToggleRangeSelection,
+                    onTogglePinned = onTogglePinned,
+                    onClickContinueWatching = onContinueWatchingClicked,
+                    searchQuery = searchQuery,
+                    onGlobalSearchClicked = onGlobalSearchClicked,
+                )
+            }
+        }
+
+        LibraryDisplayMode.CoverOnlyGrid -> {
+            AnimeLibraryAuroraCardGrid(
+                items = items,
+                columns = safeColumns,
+                contentPadding = contentPadding,
+                selection = selection,
+                selectedIds = selectedIds,
+                searchQuery = searchQuery,
+                onGlobalSearchClicked = onGlobalSearchClicked,
+                showMetadata = false,
+                onClick = onClickAnime,
+                onLongClick = onToggleRangeSelection,
+                onTogglePinned = onTogglePinned,
+                onClickContinueWatching = onContinueWatchingClicked,
+                listMaxWidthDp = auroraAdaptiveSpec.listMaxWidthDp,
+                adaptiveMinCellDp = auroraAdaptiveSpec.coverOnlyGridAdaptiveMinCellDp,
+                cardStyle = auroraCardStyle,
+                glowDisplayMode = LibraryDisplayMode.CoverOnlyGrid,
+                enabledAuras = enabledAuras,
+                performanceMode = useLargeGridPerformanceMode,
+            )
+        }
+
+        LibraryDisplayMode.ComfortableGrid -> {
+            AnimeLibraryAuroraCardGrid(
+                items = items,
+                columns = safeColumns,
+                contentPadding = contentPadding,
+                selection = selection,
+                selectedIds = selectedIds,
+                searchQuery = searchQuery,
+                onGlobalSearchClicked = onGlobalSearchClicked,
+                showMetadata = true,
+                onClick = onClickAnime,
+                onLongClick = onToggleRangeSelection,
+                onTogglePinned = onTogglePinned,
+                onClickContinueWatching = onContinueWatchingClicked,
+                listMaxWidthDp = auroraAdaptiveSpec.listMaxWidthDp,
+                adaptiveMinCellDp = auroraAdaptiveSpec.comfortableGridAdaptiveMinCellDp,
+                cardStyle = auroraCardStyle,
+                glowDisplayMode = LibraryDisplayMode.ComfortableGrid,
+                enabledAuras = enabledAuras,
+                performanceMode = useLargeGridPerformanceMode,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AnimeLibraryAuroraList(
+    items: List<AnimeLibraryItem>,
+    contentPadding: PaddingValues,
+    selection: List<LibraryAnime>,
+    selectedIds: Set<Long>,
+    searchQuery: String?,
+    onGlobalSearchClicked: () -> Unit,
+    onClick: (LibraryAnime) -> Unit,
+    onLongClick: (LibraryAnime) -> Unit,
+    onTogglePinned: (AnimeLibraryItem) -> Unit,
+    onClickContinueWatching: ((LibraryAnime) -> Unit)?,
+    listMaxWidthDp: Int?,
+    horizontalPaddingDp: Int,
+) {
+    val colors = AuroraTheme.colors
+    val showPinnedSection = remember(items) { items.containsAtLeastMatches(requiredCount = 2) { it.pinned } }
+
+    FastScrollLazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = contentPadding + PaddingValues(horizontal = horizontalPaddingDp.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            if (!searchQuery.isNullOrEmpty()) {
+                GlobalSearchItem(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .auroraCenteredMaxWidth(listMaxWidthDp),
+                    searchQuery = searchQuery,
+                    onClick = onGlobalSearchClicked,
+                )
+            }
+        }
+
+        if (showPinnedSection) {
+            item {
+                PinnedSectionHeader(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .auroraCenteredMaxWidth(listMaxWidthDp),
+                )
+            }
+        }
+
+        listItems(
+            items = items,
+            key = { it.libraryAnime.id },
+            contentType = { "anime_library_aurora_list_item" },
+        ) { libraryItem ->
+            val libraryAnime = libraryItem.libraryAnime
+            val anime = libraryAnime.anime
+            val subtitle = if (libraryAnime.totalCount > 0) {
+                "${libraryAnime.seenCount}/${libraryAnime.totalCount} ${stringResource(AYMR.strings.episodes)}"
+            } else {
+                null
+            }
+            val hasBadge = libraryItem.downloadCount > 0 ||
+                libraryItem.unseenCount > 0 ||
+                libraryItem.isLocal ||
+                libraryItem.sourceLanguage.isNotBlank()
+
+            val coverData = remember(anime) {
+                AnimeCover(
+                    animeId = anime.id,
+                    sourceId = anime.source,
+                    isAnimeFavorite = anime.favorite,
+                    url = anime.thumbnailUrl,
+                    lastModified = anime.coverLastModified,
+                )
+            }
+            AuroraCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .auroraCenteredMaxWidth(listMaxWidthDp)
+                    .aspectRatio(2.2f),
+                title = anime.displayTitle,
+                coverData = coverData,
+                subtitle = subtitle,
+                badge = if (hasBadge) {
+                    {
+                        BadgeGroup {
+                            if (libraryItem.downloadCount > 0) {
+                                Badge(
+                                    text = libraryItem.downloadCount.toString(),
+                                    color = colors.accent,
+                                    textColor = colors.textOnAccent,
+                                    shape = RoundedCornerShape(4.dp),
+                                )
+                            }
+                            if (libraryItem.unseenCount > 0) {
+                                Badge(
+                                    text = libraryItem.unseenCount.toString(),
+                                    color = colors.accent,
+                                    textColor = colors.textOnAccent,
+                                    shape = RoundedCornerShape(4.dp),
+                                )
+                            }
+                            if (libraryItem.isLocal) {
+                                Badge(
+                                    text = stringResource(AYMR.strings.aurora_local),
+                                    color = colors.accent,
+                                    textColor = colors.textOnAccent,
+                                    shape = RoundedCornerShape(4.dp),
+                                )
+                            } else if (libraryItem.sourceLanguage.isNotBlank()) {
+                                Badge(
+                                    text = libraryItem.sourceLanguage.uppercase(),
+                                    color = colors.accent,
+                                    textColor = colors.textOnAccent,
+                                    shape = RoundedCornerShape(4.dp),
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    null
+                },
+                topEndBadge = if (libraryItem.pinned) {
+                    { PinnedBadge() }
+                } else {
+                    null
+                },
+                menuContent = null,
+                onClick = { onClick(libraryAnime) },
+                onLongClick = { onLongClick(libraryAnime) },
+                onClickContinueViewing = if (
+                    shouldShowContinueViewingAction(
+                        hasContinueAction = onClickContinueWatching != null,
+                        remainingCount = libraryItem.libraryAnime.unseenCount,
+                    )
+                ) {
+                    { onClickContinueWatching?.invoke(libraryAnime) }
+                } else {
+                    null
+                },
+                isSelected = selectedIds.contains(libraryAnime.id),
+                coverHeightFraction = 0.62f,
+                titleMaxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AnimeLibraryAuroraCardGrid(
+    items: List<AnimeLibraryItem>,
+    columns: Int,
+    contentPadding: PaddingValues,
+    selection: List<LibraryAnime>,
+    selectedIds: Set<Long>,
+    searchQuery: String?,
+    onGlobalSearchClicked: () -> Unit,
+    showMetadata: Boolean,
+    onClick: (LibraryAnime) -> Unit,
+    onLongClick: (LibraryAnime) -> Unit,
+    onTogglePinned: (AnimeLibraryItem) -> Unit,
+    onClickContinueWatching: ((LibraryAnime) -> Unit)?,
+    listMaxWidthDp: Int?,
+    adaptiveMinCellDp: Int,
+    cardStyle: AuroraLibraryCardStyle,
+    glowDisplayMode: LibraryDisplayMode,
+    enabledAuras: Set<String> = emptySet(),
+    performanceMode: Boolean = false,
+) {
+    val useGlowContourCards = cardStyle == AuroraLibraryCardStyle.GlowContour
+    val showPinnedSection = remember(items) { items.containsAtLeastMatches(requiredCount = 2) { it.pinned } }
+    val textSpec = resolveGlowContourLibraryTextSpec(glowDisplayMode)
+
+    LazyLibraryGrid(
+        modifier = Modifier
+            .fillMaxSize()
+            .auroraCenteredMaxWidth(listMaxWidthDp),
+        columns = columns,
+        adaptiveMinCellDp = adaptiveMinCellDp,
+        contentPadding = contentPadding,
+    ) {
+        globalSearchItem(searchQuery, onGlobalSearchClicked)
+
+        if (showPinnedSection) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                PinnedSectionHeader(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .auroraCenteredMaxWidth(listMaxWidthDp),
+                )
+            }
+        }
+
+        gridItems(
+            items = items,
+            key = { it.libraryAnime.id },
+            contentType = {
+                if (showMetadata) {
+                    "anime_library_aurora_comfortable_grid_item"
+                } else {
+                    "anime_library_aurora_cover_only_grid_item"
+                }
+            },
+        ) { libraryItem ->
+            val libraryAnime = libraryItem.libraryAnime
+            val anime = libraryAnime.anime
+            val subtitle = if (showMetadata && libraryAnime.totalCount > 0) {
+                "${libraryAnime.seenCount}/${libraryAnime.totalCount} ${stringResource(AYMR.strings.episodes)}"
+            } else {
+                null
+            }
+            val hasBadge = libraryItem.downloadCount > 0 ||
+                libraryItem.unseenCount > 0 ||
+                libraryItem.isLocal ||
+                libraryItem.sourceLanguage.isNotBlank()
+            val progressPercent = resolveAnimeLibraryCardProgressPercent(
+                seenCount = libraryAnime.seenCount,
+                totalCount = libraryAnime.totalCount,
+            )
+            val cornerIndicatorState = resolveGlowContourCornerIndicatorState(
+                hasContinueAction = onClickContinueWatching != null,
+                remainingCount = libraryItem.libraryAnime.unseenCount,
+                isFinished = anime.status == SAnime.COMPLETED.toLong() ||
+                    anime.status == SAnime.PUBLISHING_FINISHED.toLong() ||
+                    anime.status == SAnime.CANCELLED.toLong(),
+            )
+
+            val coverData = remember(anime) {
+                AnimeCover(
+                    animeId = anime.id,
+                    sourceId = anime.source,
+                    isAnimeFavorite = anime.favorite,
+                    url = anime.thumbnailUrl,
+                    lastModified = anime.coverLastModified,
+                )
+            }
+
+            if (useGlowContourCards) {
+                GlowContourLibraryGridItem(
+                    modifier = Modifier,
+                    title = anime.displayTitle,
+                    subtitle = subtitle,
+                    coverData = coverData,
+                    progressPercent = progressPercent,
+                    cardAspectRatio = 0.76f,
+                    cornerIndicatorState = cornerIndicatorState,
+                    textSpec = textSpec,
+                    genres = anime.genre ?: emptyList(),
+                    enabledAuras = enabledAuras,
+                    performanceMode = performanceMode,
+                    badge = if (hasBadge) {
+                        {
+                            AnimeAuroraBadgeGroup(
+                                item = libraryItem,
+                                glowStyle = true,
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                    topEndBadge = if (libraryItem.pinned) {
+                        { PinnedBadge() }
+                    } else {
+                        null
+                    },
+                    menuContent = null,
+                    onClick = { onClick(libraryAnime) },
+                    onLongClick = { onLongClick(libraryAnime) },
+                    onClickContinueViewing = if (
+                        shouldShowContinueViewingAction(
+                            hasContinueAction = onClickContinueWatching != null,
+                            remainingCount = libraryItem.libraryAnime.unseenCount,
+                        )
+                    ) {
+                        { onClickContinueWatching?.invoke(libraryAnime) }
+                    } else {
+                        null
+                    },
+                    isSelected = selectedIds.contains(libraryAnime.id),
+
+                    gridColumns = columns,
+                )
+            } else {
+                AuroraCard(
+                    modifier = Modifier.aspectRatio(if (showMetadata) 0.66f else 0.6f),
+                    title = anime.displayTitle,
+                    coverData = coverData,
+
+                    subtitle = subtitle,
+                    badge = if (hasBadge) {
+                        {
+                            AnimeAuroraBadgeGroup(
+                                item = libraryItem,
+                                glowStyle = false,
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                    onClick = { onClick(libraryAnime) },
+                    onLongClick = { onLongClick(libraryAnime) },
+                    onClickContinueViewing = if (
+                        shouldShowContinueViewingAction(
+                            hasContinueAction = onClickContinueWatching != null,
+                            remainingCount = libraryItem.libraryAnime.unseenCount,
+                        )
+                    ) {
+                        { onClickContinueWatching?.invoke(libraryAnime) }
+                    } else {
+                        null
+                    },
+                    isSelected = selectedIds.contains(libraryAnime.id),
+
+                    coverHeightFraction = if (showMetadata) 0.68f else 1f,
+                    titleMaxLines = if (showMetadata) 1 else 2,
+                    gridColumns = columns,
+                    topEndBadge = if (libraryItem.pinned) {
+                        { PinnedBadge() }
+                    } else {
+                        null
+                    },
+                    menuContent = null,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnimeAuroraBadgeGroup(
+    item: AnimeLibraryItem,
+    glowStyle: Boolean,
+) {
+    val colors = AuroraTheme.colors
+    val badgeContainerColor = if (glowStyle) {
+        colors.surface.copy(alpha = 0.82f)
+    } else {
+        colors.accent
+    }
+    val badgeTextColor = if (glowStyle) {
+        colors.textPrimary
+    } else {
+        colors.textOnAccent
+    }
+
+    BadgeGroup {
+        if (item.downloadCount > 0) {
+            Badge(
+                text = item.downloadCount.toString(),
+                color = badgeContainerColor,
+                textColor = badgeTextColor,
+                shape = RoundedCornerShape(4.dp),
+            )
+        }
+        if (item.unseenCount > 0) {
+            Badge(
+                text = item.unseenCount.toString(),
+                color = badgeContainerColor,
+                textColor = badgeTextColor,
+                shape = RoundedCornerShape(4.dp),
+            )
+        }
+        if (item.isLocal) {
+            Badge(
+                text = stringResource(AYMR.strings.aurora_local),
+                color = badgeContainerColor,
+                textColor = badgeTextColor,
+                shape = RoundedCornerShape(4.dp),
+            )
+        } else if (item.sourceLanguage.isNotBlank()) {
+            Badge(
+                text = item.sourceLanguage.uppercase(),
+                color = badgeContainerColor,
+                textColor = badgeTextColor,
+                shape = RoundedCornerShape(4.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AnimeLibraryAuroraEmptyScreen(
+    searchQuery: String?,
+    hasActiveFilters: Boolean,
+    contentPadding: PaddingValues,
+    onGlobalSearchClicked: () -> Unit,
+) {
+    val message = when {
+        !searchQuery.isNullOrEmpty() -> MR.strings.no_results_found
+        hasActiveFilters -> MR.strings.error_no_match
+        else -> MR.strings.information_no_manga_category
+    }
+
+    Column(
+        modifier = Modifier
+            .padding(contentPadding + PaddingValues(8.dp))
+            .fillMaxSize(),
+    ) {
+        if (!searchQuery.isNullOrEmpty()) {
+            eu.kanade.presentation.library.components.GlobalSearchItem(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.CenterHorizontally),
+                searchQuery = searchQuery,
+                onClick = onGlobalSearchClicked,
+            )
+        }
+
+        EmptyScreen(
+            stringRes = message,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}

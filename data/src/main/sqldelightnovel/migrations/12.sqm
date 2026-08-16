@@ -1,0 +1,20 @@
+ALTER TABLE translation_queue ADD COLUMN batch_token TEXT NOT NULL DEFAULT '';
+ALTER TABLE translation_queue ADD COLUMN batch_order INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE translation_queue ADD COLUMN profile_snapshot_json TEXT;
+
+CREATE TABLE translation_batch_state(
+    batch_token TEXT NOT NULL PRIMARY KEY,
+    novel_id INTEGER NOT NULL,
+    status INTEGER NOT NULL DEFAULT 0,
+    total INTEGER NOT NULL DEFAULT 0,
+    enqueued INTEGER NOT NULL DEFAULT 0,
+    skipped INTEGER NOT NULL DEFAULT 0,
+    completed INTEGER NOT NULL DEFAULT 0,
+    failed INTEGER NOT NULL DEFAULT 0,
+    last_successful_chapter_id INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX translation_queue_batch_token_index ON translation_queue(batch_token);
+CREATE INDEX translation_queue_batch_order_index ON translation_queue(batch_token, status, batch_order, created_at);

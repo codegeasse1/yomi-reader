@@ -1,0 +1,4 @@
+-- The library view joins mangas_categories to find the display category per manga.
+-- The junction table had no index on manga_id, so every library query (which re-runs on
+-- any write to mangas/chapters/history/categories) did a full table scan of the junction.
+CREATE INDEX IF NOT EXISTS mangas_categories_manga_id_index ON mangas_categories(manga_id);

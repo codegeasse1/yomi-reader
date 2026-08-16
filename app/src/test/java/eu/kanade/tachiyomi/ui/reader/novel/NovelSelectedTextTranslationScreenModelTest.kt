@@ -1,0 +1,781 @@
+package eu.kanade.tachiyomi.ui.reader.novel
+
+import android.app.Application
+import eu.kanade.domain.base.BasePreferences
+import eu.kanade.domain.items.novelchapter.interactor.SyncNovelChaptersWithSource
+import eu.kanade.domain.source.novel.interactor.GetNovelIncognitoState
+import eu.kanade.domain.source.service.SourcePreferences
+import eu.kanade.domain.track.model.AutoTrackState
+import eu.kanade.domain.track.novel.interactor.TrackNovelChapter
+import eu.kanade.domain.track.service.TrackPreferences
+import eu.kanade.tachiyomi.data.download.novel.NovelDownloadManager
+import eu.kanade.tachiyomi.data.translation.TranslationQueueItem
+import eu.kanade.tachiyomi.data.translation.TranslationQueueManager
+import eu.kanade.tachiyomi.extension.novel.NovelExtensionManager
+import eu.kanade.tachiyomi.extension.novel.repo.NovelPluginPackage
+import eu.kanade.tachiyomi.extension.novel.repo.NovelPluginStorage
+import eu.kanade.tachiyomi.network.NetworkHelper
+import eu.kanade.tachiyomi.novelsource.NovelSource
+import eu.kanade.tachiyomi.novelsource.model.SNovelChapter
+import eu.kanade.tachiyomi.source.novel.NovelWebUrlSource
+import eu.kanade.tachiyomi.test.PersistingPreferenceStore
+import eu.kanade.tachiyomi.ui.reader.novel.NovelReaderChapterPrefetchCache
+import eu.kanade.tachiyomi.ui.reader.novel.NovelSelectedTextTranslationErrorReason
+import eu.kanade.tachiyomi.ui.reader.novel.setting.NovelReaderPreferences
+import eu.kanade.tachiyomi.ui.reader.novel.translation.DeepSeekModelsService
+import eu.kanade.tachiyomi.ui.reader.novel.translation.DeepSeekTranslationService
+import eu.kanade.tachiyomi.ui.reader.novel.translation.GeminiTranslationService
+import eu.kanade.tachiyomi.ui.reader.novel.translation.NovelReaderTranslationDiskCacheStore
+import eu.kanade.tachiyomi.ui.reader.novel.translation.NovelSelectedTextTranslationProvider
+import eu.kanade.tachiyomi.ui.reader.novel.translation.NovelSelectedTextTranslationProviderOutcome
+import eu.kanade.tachiyomi.ui.reader.novel.translation.NovelSelectedTextTranslationRequest
+import eu.kanade.tachiyomi.ui.reader.novel.translation.OpenRouterModelsService
+import eu.kanade.tachiyomi.ui.reader.novel.translation.OpenRouterTranslationService
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.unmockkAll
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
+import kotlinx.serialization.json.Json
+import okhttp3.OkHttpClient
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.parallel.Isolated
+import tachiyomi.core.common.preference.InMemoryPreferenceStore
+import tachiyomi.core.common.preference.Preference
+import tachiyomi.core.common.preference.PreferenceStore
+import tachiyomi.domain.achievement.repository.ActivityDataRepository
+import tachiyomi.domain.entries.novel.interactor.GetNovel
+import tachiyomi.domain.entries.novel.model.Novel
+import tachiyomi.domain.entries.novel.model.NovelUpdate
+import tachiyomi.domain.entries.novel.repository.NovelRepository
+import tachiyomi.domain.items.novelchapter.model.NovelChapter
+import tachiyomi.domain.items.novelchapter.model.NovelChapterUpdate
+import tachiyomi.domain.items.novelchapter.repository.NovelChapterRepository
+import tachiyomi.domain.library.novel.LibraryNovel
+import tachiyomi.domain.series.novel.interactor.GetNovelSeriesWithEntries
+import tachiyomi.domain.source.novel.model.StubNovelSource
+import tachiyomi.domain.source.novel.service.NovelSourceManager
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.fullType
+import uy.kohesive.injekt.api.get
+
+@Isolated
+class NovelSelectedTextTranslationScreenModelTest {
+    private class TestApplication : Application()
+
+    private val activeScreenModels = mutableListOf<NovelReaderScreenModel>()
+    private val syncNovelChaptersWithSource = mockk<SyncNovelChaptersWithSource>(relaxed = true)
+    private val geminiTranslationService = mockk<GeminiTranslationService>(relaxed = true)
+    private val openRouterTranslationService = mockk<OpenRouterTranslationService>(relaxed = true)
+    private val openRouterModelsService = mockk<OpenRouterModelsService>(relaxed = true)
+    private val deepSeekTranslationService = mockk<DeepSeekTranslationService>(relaxed = true)
+    private val deepSeekModelsService = mockk<DeepSeekModelsService>(relaxed = true)
+    private val getNovelSeriesWithEntries = mockk<GetNovelSeriesWithEntries>(relaxed = true)
+
+    @AfterEach
+    fun tearDown() {
+        runBlocking {
+            activeScreenModels.forEach {
+                it.onDispose()
+                it.awaitDisposalCleanup()
+            }
+            yield()
+        }
+        activeScreenModels.clear()
+        NovelReaderChapterPrefetchCache.clear()
+        NovelReaderTranslationDiskCacheStore.clear()
+        unmockkAll()
+        Dispatchers.resetMain()
+    }
+
+    @BeforeEach
+    fun clearReaderCaches() {
+        Dispatchers.setMain(Dispatchers.Unconfined)
+        setupInjektApplication()
+        NovelReaderChapterPrefetchCache.clear()
+        NovelReaderTranslationDiskCacheStore.clear()
+    }
+
+    private fun setupInjektApplication() {
+        runCatching { Injekt.get<NovelReaderPreferences>() }
+            .getOrElse {
+                Injekt.addSingleton(
+                    fullType<NovelReaderPreferences>(),
+                    NovelReaderPreferences(PersistingPreferenceStore()),
+                )
+            }
+
+        runCatching { Injekt.get<GetNovelIncognitoState>() }
+            .getOrElse {
+                // Registered in DomainModule for the app; unit tests never run that module. Build the
+                // real interactor so incognito preferences behave exactly as they do in production.
+                val basePreferences = runCatching { Injekt.get<BasePreferences>() }
+                    .getOrElse {
+                        // ReactivePreferenceStore, not InMemoryPreferenceStore: the latter hands out a
+                        // fresh preference per lookup, so a set() in a test would be invisible here.
+                        BasePreferences(mockk(relaxed = true), PersistingPreferenceStore())
+                            .also { Injekt.addSingleton(fullType<BasePreferences>(), it) }
+                    }
+                val sourcePreferences = runCatching { Injekt.get<SourcePreferences>() }
+                    .getOrElse {
+                        SourcePreferences(PersistingPreferenceStore())
+                            .also { Injekt.addSingleton(fullType<SourcePreferences>(), it) }
+                    }
+                val extensionManager = runCatching { Injekt.get<NovelExtensionManager>() }
+                    .getOrElse {
+                        mockk<NovelExtensionManager>(relaxed = true).also { manager ->
+                            every { manager.getPluginId(any()) } returns null
+                            every { manager.getPluginIdAsFlow(any()) } returns flowOf(null)
+                            every { manager.isNsfwForSource(any()) } returns false
+                            every { manager.isNsfwForSourceAsFlow(any()) } returns flowOf(false)
+                            Injekt.addSingleton(fullType<NovelExtensionManager>(), manager)
+                        }
+                    }
+                Injekt.addSingleton(
+                    fullType<GetNovelIncognitoState>(),
+                    GetNovelIncognitoState(basePreferences, sourcePreferences, extensionManager),
+                )
+            }
+
+        val application = mockk<Application>(relaxed = true)
+        val filesDir = java.io.File(System.getProperty("java.io.tmpdir"), "novel-translation-test-files")
+            .apply { mkdirs() }
+        val cacheDir = java.io.File(System.getProperty("java.io.tmpdir"), "novel-translation-test-cache")
+            .apply { mkdirs() }
+        every { application.filesDir } returns filesDir
+        every { application.cacheDir } returns cacheDir
+        Injekt.addSingleton(fullType<Application>(), application)
+
+        val translationQueueManager = mockk<TranslationQueueManager>(relaxed = true)
+        every {
+            translationQueueManager.activeTranslation
+        } returns MutableStateFlow<TranslationQueueItem?>(null)
+        Injekt.addSingleton(fullType<TranslationQueueManager>(), translationQueueManager)
+
+        val networkHelper = mockk<NetworkHelper>()
+        every { networkHelper.client } returns OkHttpClient()
+        Injekt.addSingleton(fullType<NetworkHelper>(), networkHelper)
+
+        runCatching { Injekt.get<TrackPreferences>() }
+            .getOrElse {
+                val trackPreferences = mockk<TrackPreferences>(relaxed = true)
+                every { trackPreferences.autoUpdateTrackOnMarkRead() } returns object : Preference<AutoTrackState> {
+                    override fun get() = AutoTrackState.ALWAYS
+                    override fun set(value: AutoTrackState) {}
+                    override fun isSet() = true
+                    override fun defaultValue() = AutoTrackState.ALWAYS
+                    override fun key() = "pref_auto_update_novel_on_mark_read"
+                    override fun changes() = MutableStateFlow(get())
+                    override fun stateIn(scope: CoroutineScope) = MutableStateFlow(get())
+                    override fun delete() {}
+                }
+                every { trackPreferences.autoUpdateTrack() } returns object : Preference<Boolean> {
+                    override fun get() = true
+                    override fun set(value: Boolean) {}
+                    override fun isSet() = true
+                    override fun defaultValue() = true
+                    override fun key() = "pref_auto_update_novel_sync_key"
+                    override fun changes() = MutableStateFlow(get())
+                    override fun stateIn(scope: CoroutineScope) = MutableStateFlow(get())
+                    override fun delete() {}
+                }
+                Injekt.addSingleton(fullType<TrackPreferences>(), trackPreferences)
+            }
+        runCatching { Injekt.get<TrackNovelChapter>() }
+            .getOrElse {
+                Injekt.addSingleton(fullType<TrackNovelChapter>(), mockk<TrackNovelChapter>(relaxed = true))
+            }
+
+        runCatching { Injekt.get<tachiyomi.domain.book.novel.interactor.GetNovelBookState>() }
+            .getOrElse {
+                // Registered in DomainModule with addFactory for the app; unit tests never run that
+                // module, so back the interactor with a repository that reports no saved book state.
+                val bookStateRepository =
+                    mockk<tachiyomi.domain.book.novel.repository.NovelBookStateRepository>(relaxed = true)
+                io.mockk.coEvery { bookStateRepository.getBookState(any()) } returns null
+                every { bookStateRepository.subscribeBookState(any()) } returns flowOf(null)
+                every { bookStateRepository.subscribeEnabledBookStates() } returns flowOf(emptyList())
+                io.mockk.coEvery { bookStateRepository.getAllBookStates() } returns emptyList()
+                Injekt.addSingleton(
+                    fullType<tachiyomi.domain.book.novel.repository.NovelBookStateRepository>(),
+                    bookStateRepository,
+                )
+                Injekt.addSingleton(
+                    fullType<tachiyomi.domain.book.novel.interactor.GetNovelBookState>(),
+                    tachiyomi.domain.book.novel.interactor.GetNovelBookState(bookStateRepository),
+                )
+                Injekt.addSingleton(
+                    fullType<tachiyomi.domain.book.novel.interactor.SetNovelBookProgress>(),
+                    tachiyomi.domain.book.novel.interactor.SetNovelBookProgress(bookStateRepository),
+                )
+                Injekt.addSingleton(
+                    fullType<tachiyomi.domain.book.novel.interactor.SetNovelBookEnabled>(),
+                    tachiyomi.domain.book.novel.interactor.SetNovelBookEnabled(bookStateRepository),
+                )
+                Injekt.addSingleton(
+                    fullType<tachiyomi.domain.book.novel.interactor.UpsertNovelBookState>(),
+                    tachiyomi.domain.book.novel.interactor.UpsertNovelBookState(bookStateRepository),
+                )
+                Injekt.addSingleton(
+                    fullType<tachiyomi.domain.book.novel.interactor.DeleteNovelBookState>(),
+                    tachiyomi.domain.book.novel.interactor.DeleteNovelBookState(bookStateRepository),
+                )
+            }
+
+        Injekt.addSingleton(fullType<Json>(), Json { encodeDefaults = true })
+        every { getNovelSeriesWithEntries.subscribe(any()) } returns MutableStateFlow(null)
+        Injekt.addSingleton(fullType<GetNovelSeriesWithEntries>(), getNovelSeriesWithEntries)
+
+        runCatching { Injekt.get<BasePreferences>() }
+            .getOrElse {
+                Injekt.addSingleton(
+                    fullType<BasePreferences>(),
+                    BasePreferences(Injekt.get<Application>(), ReactivePreferenceStore()),
+                )
+            }
+    }
+
+    @Test
+    fun `selection update exposes button and card state`() {
+        runBlocking {
+            val provider = ScriptedSelectedTextTranslationProvider()
+            val screenModel = trackedNovelReaderScreenModel(
+                selectedTextTranslationProvider = provider,
+            )
+
+            awaitLoaded(screenModel)
+
+            val selection = selectedTextSelection()
+            screenModel.updateSelectedTextSelection(selection)
+            yield()
+
+            val state = screenModel.state.value.shouldBeInstanceOf<NovelReaderScreenModel.State.Success>()
+            state.selectedTextTranslationSelection shouldBe selection
+            // A selection without a trigger action stays Idle: the toolbar action drives the flow
+            // (Idle -> Translating -> Result), there is no intermediate SelectionAvailable card.
+            state.selectedTextTranslationUiState.shouldBeInstanceOf<
+                NovelSelectedTextTranslationUiState.Idle,
+                >()
+        }
+    }
+
+    @Test
+    fun `disabled selection does not expose translation ui or request translation`() {
+        runBlocking {
+            val provider = ScriptedSelectedTextTranslationProvider()
+            val screenModel = trackedNovelReaderScreenModel(
+                selectedTextTranslationProvider = provider,
+                selectedTextTranslationEnabled = false,
+            )
+
+            awaitLoaded(screenModel)
+
+            screenModel.updateSelectedTextSelection(selectedTextSelection())
+            screenModel.translateSelectedText()
+            yield()
+
+            val state = screenModel.state.value.shouldBeInstanceOf<NovelReaderScreenModel.State.Success>()
+            state.selectedTextTranslationSelection shouldBe null
+            state.selectedTextTranslationUiState shouldBe NovelSelectedTextTranslationUiState.Idle
+            provider.requests shouldBe emptyList()
+        }
+    }
+
+    @Test
+    fun `translate action enters loading and success states`() {
+        runBlocking {
+            val deferred = CompletableDeferred<NovelSelectedTextTranslationProviderOutcome>()
+            val provider = ScriptedSelectedTextTranslationProvider(
+                onTranslate = { deferred.await() },
+            )
+            val screenModel = trackedNovelReaderScreenModel(
+                selectedTextTranslationProvider = provider,
+            )
+
+            awaitLoaded(screenModel)
+
+            val selection = selectedTextSelection()
+            screenModel.updateSelectedTextSelection(selection)
+            screenModel.translateSelectedText()
+
+            withTimeout(1_000) {
+                while (provider.requests.isEmpty()) {
+                    yield()
+                }
+            }
+
+            screenModel.state.value.shouldBeInstanceOf<NovelReaderScreenModel.State.Success>()
+                .selectedTextTranslationUiState.shouldBeInstanceOf<NovelSelectedTextTranslationUiState.Translating>()
+
+            deferred.complete(
+                NovelSelectedTextTranslationProviderOutcome.Success(
+                    result = eu.kanade.tachiyomi.ui.reader.novel.NovelSelectedTextTranslationResult(
+                        translation = "Привет",
+                        detectedSourceLanguage = "en",
+                        providerFingerprint = provider.fingerprint,
+                    ),
+                ),
+            )
+
+            withTimeout(1_000) {
+                while (true) {
+                    val current = screenModel.state.value.shouldBeInstanceOf<NovelReaderScreenModel.State.Success>()
+                    if (current.selectedTextTranslationUiState is NovelSelectedTextTranslationUiState.Result) {
+                        break
+                    }
+                    yield()
+                }
+            }
+
+            val success = screenModel.state.value.shouldBeInstanceOf<NovelReaderScreenModel.State.Success>()
+            val resultState = success.selectedTextTranslationUiState.shouldBeInstanceOf<
+                NovelSelectedTextTranslationUiState.Result,
+                >()
+            resultState.translationResult.translation shouldBe "Привет"
+            provider.requests.size shouldBe 1
+        }
+    }
+
+    @Test
+    fun `dismissed stale response is ignored`() {
+        runBlocking {
+            val deferred = CompletableDeferred<NovelSelectedTextTranslationProviderOutcome>()
+            val provider = ScriptedSelectedTextTranslationProvider(
+                onTranslate = { deferred.await() },
+            )
+            val screenModel = trackedNovelReaderScreenModel(
+                selectedTextTranslationProvider = provider,
+            )
+
+            awaitLoaded(screenModel)
+
+            screenModel.updateSelectedTextSelection(selectedTextSelection(sessionId = 7L))
+            screenModel.translateSelectedText()
+
+            withTimeout(1_000) {
+                while (provider.requests.isEmpty()) {
+                    yield()
+                }
+            }
+
+            screenModel.dismissSelectedTextTranslation()
+            deferred.complete(
+                NovelSelectedTextTranslationProviderOutcome.Success(
+                    result = eu.kanade.tachiyomi.ui.reader.novel.NovelSelectedTextTranslationResult(
+                        translation = "Привет",
+                        detectedSourceLanguage = "en",
+                        providerFingerprint = provider.fingerprint,
+                    ),
+                ),
+            )
+            yield()
+
+            val state = screenModel.state.value.shouldBeInstanceOf<NovelReaderScreenModel.State.Success>()
+            state.selectedTextTranslationUiState shouldBe NovelSelectedTextTranslationUiState.Idle
+            state.selectedTextTranslationSelection shouldBe null
+        }
+    }
+
+    @Test
+    fun `chapter reset clears selection and ignores late response`() {
+        runBlocking {
+            val deferred = CompletableDeferred<NovelSelectedTextTranslationProviderOutcome>()
+            val provider = ScriptedSelectedTextTranslationProvider(
+                onTranslate = { deferred.await() },
+            )
+            val screenModel = trackedNovelReaderScreenModel(
+                selectedTextTranslationProvider = provider,
+            )
+
+            awaitLoaded(screenModel)
+
+            screenModel.updateSelectedTextSelection(selectedTextSelection(sessionId = 9L))
+            screenModel.translateSelectedText()
+
+            withTimeout(1_000) {
+                while (provider.requests.isEmpty()) {
+                    yield()
+                }
+            }
+
+            screenModel.resetSelectedTextTranslationForChapter()
+            deferred.complete(
+                NovelSelectedTextTranslationProviderOutcome.Success(
+                    result = eu.kanade.tachiyomi.ui.reader.novel.NovelSelectedTextTranslationResult(
+                        translation = "Привет",
+                        detectedSourceLanguage = "en",
+                        providerFingerprint = provider.fingerprint,
+                    ),
+                ),
+            )
+            yield()
+
+            val state = screenModel.state.value.shouldBeInstanceOf<NovelReaderScreenModel.State.Success>()
+            state.selectedTextTranslationUiState shouldBe NovelSelectedTextTranslationUiState.Idle
+            state.selectedTextTranslationSelection shouldBe null
+        }
+    }
+
+    @Test
+    fun `repeated same text request hits session cache`() {
+        runBlocking {
+            val provider = ScriptedSelectedTextTranslationProvider(
+                onTranslate = {
+                    NovelSelectedTextTranslationProviderOutcome.Success(
+                        result = eu.kanade.tachiyomi.ui.reader.novel.NovelSelectedTextTranslationResult(
+                            translation = "Привет",
+                            detectedSourceLanguage = "en",
+                            providerFingerprint = fingerprint,
+                        ),
+                    )
+                },
+            )
+            val screenModel = trackedNovelReaderScreenModel(
+                selectedTextTranslationProvider = provider,
+            )
+
+            awaitLoaded(screenModel)
+
+            val selection = selectedTextSelection(sessionId = 11L)
+            screenModel.updateSelectedTextSelection(selection)
+            screenModel.translateSelectedText()
+            withTimeout(1_000) {
+                while (
+                    screenModel.state.value
+                        .shouldBeInstanceOf<NovelReaderScreenModel.State.Success>()
+                        .selectedTextTranslationUiState !is NovelSelectedTextTranslationUiState.Result
+                ) {
+                    yield()
+                }
+            }
+
+            screenModel.updateSelectedTextSelection(selection)
+            screenModel.translateSelectedText()
+            yield()
+
+            provider.requests.size shouldBe 1
+            screenModel.state.value.shouldBeInstanceOf<NovelReaderScreenModel.State.Success>()
+                .selectedTextTranslationUiState.shouldBeInstanceOf<NovelSelectedTextTranslationUiState.Result>()
+        }
+    }
+
+    @Test
+    fun `cooldown state is surfaced without breaking reading`() {
+        runBlocking {
+            val provider = ScriptedSelectedTextTranslationProvider(
+                onTranslate = {
+                    NovelSelectedTextTranslationProviderOutcome.Unavailable(
+                        reason = NovelSelectedTextTranslationErrorReason.Cooldown(60),
+                    )
+                },
+            )
+            val screenModel = trackedNovelReaderScreenModel(
+                selectedTextTranslationProvider = provider,
+            )
+
+            awaitLoaded(screenModel)
+
+            screenModel.updateSelectedTextSelection(selectedTextSelection(sessionId = 13L))
+            screenModel.translateSelectedText()
+
+            withTimeout(1_000) {
+                while (true) {
+                    val current = screenModel.state.value.shouldBeInstanceOf<NovelReaderScreenModel.State.Success>()
+                    if (current.selectedTextTranslationUiState is NovelSelectedTextTranslationUiState.Unavailable) {
+                        current.contentBlocks.isNotEmpty() shouldBe true
+                        break
+                    }
+                    yield()
+                }
+            }
+        }
+    }
+
+    private suspend fun awaitLoaded(screenModel: NovelReaderScreenModel) {
+        withTimeout(1_000) {
+            while (screenModel.state.value is NovelReaderScreenModel.State.Loading) {
+                yield()
+            }
+        }
+    }
+
+    private class ScriptedSelectedTextTranslationProvider(
+        override val fingerprint: String = "google-unofficial-test",
+        private val onTranslate: suspend NovelSelectedTextTranslationProvider.(
+            NovelSelectedTextTranslationRequest,
+        ) -> NovelSelectedTextTranslationProviderOutcome = {
+            NovelSelectedTextTranslationProviderOutcome.Success(
+                result = eu.kanade.tachiyomi.ui.reader.novel.NovelSelectedTextTranslationResult(
+                    translation = "Привет",
+                    detectedSourceLanguage = "en",
+                    providerFingerprint = fingerprint,
+                ),
+            )
+        },
+    ) : NovelSelectedTextTranslationProvider {
+        val requests = mutableListOf<NovelSelectedTextTranslationRequest>()
+
+        override suspend fun translate(
+            request: NovelSelectedTextTranslationRequest,
+        ): NovelSelectedTextTranslationProviderOutcome {
+            requests += request
+            return onTranslate(request)
+        }
+    }
+
+    private fun selectedTextSelection(
+        sessionId: Long = 1L,
+    ): NovelSelectedTextSelection {
+        return NovelSelectedTextSelection(
+            sessionId = sessionId,
+            renderer = NovelSelectedTextRenderer.PAGE_READER,
+            text = "Hello",
+            anchor = NovelSelectedTextAnchor(
+                leftPx = 10,
+                topPx = 20,
+                rightPx = 30,
+                bottomPx = 40,
+            ),
+        )
+    }
+
+    private fun trackedNovelReaderScreenModel(
+        selectedTextTranslationProvider: NovelSelectedTextTranslationProvider,
+        selectedTextTranslationEnabled: Boolean = true,
+    ): NovelReaderScreenModel {
+        val novel = Novel.create().copy(
+            id = 1L,
+            source = 10L,
+            title = "Novel",
+            url = "https://example.org/novel/",
+        )
+        val chapter = NovelChapter.create().copy(
+            id = 5L,
+            novelId = 1L,
+            name = "Chapter 1",
+            url = "https://example.org/novel/ch1",
+        )
+
+        val model = NovelReaderScreenModel(
+            chapterId = chapter.id,
+            novelChapterRepository = FakeNovelChapterRepository(chapter),
+            syncNovelChaptersWithSource = syncNovelChaptersWithSource,
+            getNovel = GetNovel(FakeNovelRepository(novel)),
+            sourceManager = FakeNovelSourceManager(sourceId = novel.source, chapterHtml = "<p>Hello</p>"),
+            novelDownloadManager = NovelDownloadManager(
+                application = null,
+                sourceManager = FakeNovelSourceManager(sourceId = novel.source, chapterHtml = "<p>Hello</p>"),
+                storageManager = null,
+                downloadCache = null,
+            ),
+            pluginStorage = FakeNovelPluginStorage(emptyList()),
+            historyRepository = null,
+            novelReaderPreferences = createNovelReaderPreferences(
+                selectedTextTranslationEnabled = selectedTextTranslationEnabled,
+            ),
+            isSystemDark = { false },
+            geminiTranslationService = geminiTranslationService,
+            openRouterTranslationService = openRouterTranslationService,
+            openRouterModelsService = openRouterModelsService,
+            deepSeekTranslationService = deepSeekTranslationService,
+            deepSeekModelsService = deepSeekModelsService,
+            selectedTextTranslationProvider = selectedTextTranslationProvider,
+            activityDataRepository = mockk<ActivityDataRepository>(relaxed = true),
+        )
+        activeScreenModels += model
+        return model
+    }
+
+    private fun createNovelReaderPreferences(
+        selectedTextTranslationEnabled: Boolean = true,
+    ): NovelReaderPreferences {
+        return NovelReaderPreferences(
+            preferenceStore = ReactivePreferenceStore(),
+            json = Json { encodeDefaults = true },
+        ).also { prefs ->
+            prefs.cacheReadChapters().set(false)
+            prefs.cacheReadChaptersUnlimited().set(false)
+            prefs.selectedTextTranslationEnabled().set(selectedTextTranslationEnabled)
+        }
+    }
+
+    private class ReactivePreferenceStore : PreferenceStore {
+        private val values = mutableMapOf<String, Any?>()
+        private val flows = mutableMapOf<String, MutableStateFlow<Any?>>()
+
+        override fun getString(key: String, defaultValue: String): Preference<String> = createPreference(
+            key,
+            defaultValue,
+        )
+
+        override fun getLong(key: String, defaultValue: Long): Preference<Long> = createPreference(key, defaultValue)
+
+        override fun getInt(key: String, defaultValue: Int): Preference<Int> = createPreference(key, defaultValue)
+
+        override fun getFloat(key: String, defaultValue: Float): Preference<Float> = createPreference(key, defaultValue)
+
+        override fun getBoolean(key: String, defaultValue: Boolean): Preference<Boolean> = createPreference(
+            key,
+            defaultValue,
+        )
+
+        override fun getStringSet(key: String, defaultValue: Set<String>): Preference<Set<String>> =
+            createPreference(key, defaultValue)
+
+        override fun <T> getObject(
+            key: String,
+            defaultValue: T,
+            serializer: (T) -> String,
+            deserializer: (String) -> T,
+        ): Preference<T> = createPreference(key, defaultValue)
+
+        override fun getAll(): Map<String, *> = values.toMap()
+
+        @Suppress("UNCHECKED_CAST")
+        private fun <T> createPreference(key: String, defaultValue: T): Preference<T> {
+            val stateFlow = flows.getOrPut(key) {
+                MutableStateFlow(values[key] ?: defaultValue)
+            }
+            return object : Preference<T> {
+                override fun key(): String = key
+
+                override fun get(): T = (values[key] as T?) ?: (stateFlow.value as T?) ?: defaultValue
+
+                override fun set(value: T) {
+                    values[key] = value
+                    stateFlow.value = value
+                }
+
+                override fun isSet(): Boolean = values.containsKey(key)
+
+                override fun delete() {
+                    values.remove(key)
+                    stateFlow.value = defaultValue
+                }
+
+                override fun defaultValue(): T = defaultValue
+
+                override fun changes(): Flow<T> = stateFlow.map { (it as T?) ?: defaultValue }
+
+                override fun stateIn(scope: CoroutineScope) =
+                    changes().stateIn(scope, SharingStarted.Eagerly, get())
+            }
+        }
+    }
+
+    private class FakeNovelChapterRepository(
+        private val chapter: NovelChapter?,
+    ) : NovelChapterRepository {
+        override suspend fun addAllChapters(chapters: List<NovelChapter>): List<NovelChapter> = chapters
+        override suspend fun updateChapter(chapterUpdate: NovelChapterUpdate) = Unit
+        override suspend fun updateAllChapters(chapterUpdates: List<NovelChapterUpdate>) = Unit
+        override suspend fun removeChaptersWithIds(chapterIds: List<Long>) = Unit
+        override suspend fun getChapterByNovelId(novelId: Long, applyScanlatorFilter: Boolean): List<NovelChapter> =
+            listOfNotNull(chapter)
+        override suspend fun getScanlatorsByNovelId(novelId: Long): List<String> = emptyList()
+        override fun getScanlatorsByNovelIdAsFlow(novelId: Long): Flow<List<String>> =
+            MutableStateFlow(emptyList())
+        override suspend fun getBookmarkedChaptersByNovelId(novelId: Long): List<NovelChapter> = emptyList()
+        override suspend fun getChapterById(id: Long): NovelChapter? = chapter?.takeIf { it.id == id }
+        override fun getChapterByNovelIdAsFlow(
+            novelId: Long,
+            applyScanlatorFilter: Boolean,
+        ): Flow<List<NovelChapter>> = MutableStateFlow(listOfNotNull(chapter))
+        override suspend fun getChapterByUrlAndNovelId(url: String, novelId: Long): NovelChapter? = null
+        override suspend fun syncChapters(
+            toAdd: List<NovelChapter>,
+            toUpdate: List<NovelChapterUpdate>,
+            toDelete: List<Long>,
+        ): List<NovelChapter> = emptyList()
+    }
+
+    private class FakeNovelRepository(
+        private val novel: Novel,
+    ) : NovelRepository {
+        override suspend fun getNovelById(id: Long): Novel = novel
+        override fun getNovelByIdAsFlow(id: Long) = MutableStateFlow(novel)
+        override suspend fun getNovelByUrlAndSourceId(url: String, sourceId: Long): Novel? = null
+        override fun getNovelByUrlAndSourceIdAsFlow(url: String, sourceId: Long) = MutableStateFlow<Novel?>(null)
+        override suspend fun getNovelFavorites(): List<Novel> = emptyList()
+        override suspend fun getReadNovelNotInLibrary(): List<Novel> = emptyList()
+
+        override fun getUpcomingNovels(statuses: Set<Long>): kotlinx.coroutines.flow.Flow<List<Novel>> =
+            kotlinx.coroutines.flow.flowOf(emptyList())
+        override suspend fun getLibraryNovel(): List<LibraryNovel> = emptyList()
+        override fun getLibraryNovelAsFlow() = MutableStateFlow(emptyList<LibraryNovel>())
+        override fun getNovelFavoritesBySourceId(sourceId: Long) = MutableStateFlow(emptyList<Novel>())
+        override suspend fun insertNovel(novel: Novel): Long? = null
+        override suspend fun updateNovel(update: NovelUpdate): Boolean = true
+        override suspend fun updateAllNovel(novelUpdates: List<NovelUpdate>): Boolean = true
+        override suspend fun resetNovelViewerFlags(): Boolean = true
+
+        override suspend fun updateNovelMetadata(
+            novelId: Long,
+            customTitle: String?,
+            customAuthor: String?,
+            customDescription: String?,
+            customGenre: List<String>?,
+            customStatus: Long?,
+        ): Boolean = true
+    }
+
+    private class FakeNovelPluginStorage(
+        private val packages: List<NovelPluginPackage>,
+    ) : NovelPluginStorage {
+        override suspend fun save(pkg: NovelPluginPackage) = Unit
+        override suspend fun get(id: String): NovelPluginPackage? = packages.firstOrNull { it.entry.id == id }
+        override suspend fun getAll(): List<NovelPluginPackage> = packages
+    }
+
+    private class FakeNovelSourceManager(
+        private val sourceId: Long,
+        private val chapterHtml: String,
+    ) : NovelSourceManager {
+        override val isInitialized = MutableStateFlow(true)
+        override val catalogueSources =
+            MutableStateFlow(emptyList<eu.kanade.tachiyomi.novelsource.NovelCatalogueSource>())
+        override fun get(sourceKey: Long): NovelSource? =
+            if (sourceKey == sourceId) {
+                FakeNovelSource(id = sourceId, chapterHtml = chapterHtml)
+            } else {
+                null
+            }
+        override fun getOrStub(sourceKey: Long): NovelSource =
+            get(sourceKey) ?: object : NovelSource {
+                override val id: Long = sourceKey
+                override val name: String = "Stub"
+            }
+        override fun getOnlineSources() = emptyList<eu.kanade.tachiyomi.novelsource.online.NovelHttpSource>()
+        override fun getCatalogueSources() = emptyList<eu.kanade.tachiyomi.novelsource.NovelCatalogueSource>()
+        override fun getStubSources() = emptyList<StubNovelSource>()
+    }
+
+    private class FakeNovelSource(
+        override val id: Long,
+        private val chapterHtml: String,
+    ) : NovelSource, NovelWebUrlSource {
+        override val name: String = "NovelSource"
+        override suspend fun getChapterText(chapter: SNovelChapter): String {
+            println("FakeNovelSource.getChapterText url=${chapter.url}")
+            return chapterHtml
+        }
+        override suspend fun getNovelWebUrl(novelPath: String): String? = null
+        override suspend fun getChapterWebUrl(chapterPath: String, novelPath: String?): String? = null
+    }
+}

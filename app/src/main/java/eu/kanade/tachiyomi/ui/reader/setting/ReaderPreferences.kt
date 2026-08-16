@@ -1,0 +1,499 @@
+package eu.kanade.tachiyomi.ui.reader.setting
+
+import android.os.Build
+import androidx.compose.ui.graphics.BlendMode
+import dev.icerock.moko.resources.StringResource
+import eu.kanade.tachiyomi.ui.reader.viewer.navigation.CUSTOM_TAP_ZONES_DEFAULT
+import tachiyomi.core.common.preference.Preference
+import tachiyomi.core.common.preference.PreferenceStore
+import tachiyomi.core.common.preference.getEnum
+import tachiyomi.i18n.MR
+
+class ReaderPreferences(
+    private val preferenceStore: PreferenceStore,
+) {
+
+    // region General
+
+    fun pageTransitions() = preferenceStore.getBoolean("pref_enable_transitions_key", true)
+
+    fun flashOnPageChange() = preferenceStore.getBoolean("pref_reader_flash", false)
+
+    fun flashDurationMillis() = preferenceStore.getInt("pref_reader_flash_duration", MILLI_CONVERSION)
+
+    fun flashPageInterval() = preferenceStore.getInt("pref_reader_flash_interval", 1)
+
+    fun flashColor() = preferenceStore.getEnum("pref_reader_flash_mode", FlashColor.BLACK)
+
+    fun doubleTapAnimSpeed() = preferenceStore.getInt("pref_double_tap_anim_speed", 500)
+
+    fun showPageNumber() = preferenceStore.getBoolean("pref_show_page_number_key", true)
+
+    fun showReadingTimeLeft() = preferenceStore.getBoolean("pref_show_reading_time_left_key", true)
+
+    fun showReadingMode() = preferenceStore.getBoolean("pref_show_reading_mode", true)
+
+    // region Bottom bar button visibility
+
+    fun showBottomBarReadingMode() = preferenceStore.getBoolean("pref_bottom_bar_reading_mode", true)
+
+    fun showBottomBarOrientation() = preferenceStore.getBoolean("pref_bottom_bar_orientation", true)
+
+    fun showBottomBarCropBorders() = preferenceStore.getBoolean("pref_bottom_bar_crop_borders", true)
+
+    fun showBottomBarChapterList() = preferenceStore.getBoolean("pref_bottom_bar_chapter_list", true)
+
+    fun showBottomBarSettings() = preferenceStore.getBoolean("pref_bottom_bar_settings", true)
+
+    // ponytail: comma-separated string is simpler than JSON serialization for 5 items
+    fun bottomBarButtonsOrder() = preferenceStore.getString(
+        "pref_bottom_bar_buttons_order",
+        "reading_mode,orientation,crop_borders,chapter_list,settings",
+    )
+
+    // endregion
+
+    // region Toolbar (top app bar) action buttons
+
+    fun showToolbarWebViewButton() = preferenceStore.getBoolean("pref_toolbar_web_view_button", false)
+
+    fun showToolbarShareButton() = preferenceStore.getBoolean("pref_toolbar_share_button", false)
+
+    // endregion
+
+    fun useAutoWebtoon() = preferenceStore.getBoolean("reader_use_auto_webtoon", true)
+
+    fun autoWebtoonPromptDismissedMangaIds() =
+        preferenceStore.getStringSet("reader_auto_webtoon_prompt_dismissed_manga_ids", emptySet())
+
+    fun fullscreen() = preferenceStore.getBoolean("fullscreen", true)
+
+    fun cutoutShort() = preferenceStore.getBoolean("cutout_short", true)
+
+    fun keepScreenOn() = preferenceStore.getBoolean("pref_keep_screen_on_key", true)
+
+    fun defaultReadingMode() = preferenceStore.getInt(
+        "pref_default_reading_mode_key",
+        ReadingMode.RIGHT_TO_LEFT.flagValue,
+    )
+
+    fun defaultOrientationType() = preferenceStore.getInt(
+        "pref_default_orientation_type_key",
+        ReaderOrientation.FREE.flagValue,
+    )
+
+    fun webtoonDoubleTapZoomEnabled() = preferenceStore.getBoolean(
+        "pref_enable_double_tap_zoom_webtoon",
+        true,
+    )
+
+    fun imageScaleType() = preferenceStore.getInt("pref_image_scale_type_key", 1)
+
+    fun zoomStart() = preferenceStore.getInt("pref_zoom_start_key", 1)
+
+    fun readerTheme() = preferenceStore.getInt("pref_reader_theme_key", 1)
+
+    fun alwaysShowChapterTransition() = preferenceStore.getBoolean(
+        "always_show_chapter_transition",
+        true,
+    )
+
+    fun preserveReadingPosition() = preferenceStore.getBoolean(
+        "pref_preserve_reading_position",
+        false,
+    )
+
+    fun cropBorders() = preferenceStore.getBoolean("crop_borders", false)
+
+    fun navigateToPan() = preferenceStore.getBoolean("navigate_pan", true)
+
+    fun landscapeZoom() = preferenceStore.getBoolean("landscape_zoom", true)
+
+    fun cropBordersWebtoon() = preferenceStore.getBoolean("crop_borders_webtoon", false)
+
+    fun webtoonSmartFit() = preferenceStore.getBoolean("webtoon_smart_fit", false)
+
+    fun webtoonSidePadding() = preferenceStore.getInt("webtoon_side_padding", WEBTOON_PADDING_MIN)
+
+    fun readerHideThreshold() = preferenceStore.getEnum("reader_hide_threshold", ReaderHideThreshold.LOW)
+
+    fun folderPerManga() = preferenceStore.getBoolean("create_folder_per_manga", false)
+
+    fun skipRead() = preferenceStore.getBoolean("skip_read", false)
+
+    fun skipFiltered() = preferenceStore.getBoolean("skip_filtered", true)
+
+    fun skipDupe() = preferenceStore.getBoolean("skip_dupe", false)
+
+    fun webtoonDisableZoomOut() = preferenceStore.getBoolean("webtoon_disable_zoom_out", false)
+
+    fun autoScrollEnabled() = preferenceStore.getBoolean("pref_auto_scroll_enabled", false)
+
+    fun autoScrollSpeed() = preferenceStore.getInt("pref_auto_scroll_speed", 50)
+
+    fun showAutoScrollFloatingButton() =
+        preferenceStore.getBoolean("pref_show_auto_scroll_floating_button", false)
+
+    fun saveLongPagePosition() = preferenceStore.getBoolean("pref_save_long_page_position", true)
+
+    fun preloadPagesBefore() = preferenceStore.getInt("pref_reader_preload_pages_before", 1)
+
+    fun preloadPagesAfter() = preferenceStore.getInt("pref_reader_preload_pages_after", 4)
+
+    fun preloadNextChapter() = preferenceStore.getBoolean("pref_reader_preload_next_chapter", true)
+
+    fun imageCacheSizeMb() = preferenceStore.getInt("pref_reader_image_cache_size_mb", DEFAULT_IMAGE_CACHE_SIZE_MB)
+
+    fun pageActionButtonColor() = preferenceStore.getInt("reader_page_action_button_color", 0)
+
+    fun pageActionLabelColor() = preferenceStore.getInt("reader_page_action_label_color", 0)
+
+    internal fun getLongPageProgressForChapter(chapterId: Long): Long? {
+        return getLongPageProgressForChapter(chapterId, chapterKey = null)
+    }
+
+    internal fun getLongPageProgressForChapter(
+        chapterId: Long,
+        chapterKey: String?,
+    ): Long? {
+        val normalizedKey = chapterKey?.takeIf { it.isNotBlank() }
+        return parseLongPageProgressCache(longPageProgressCache().get())
+            .firstOrNull { entry ->
+                entry.chapterId == chapterId &&
+                    (
+                        normalizedKey == null ||
+                            entry.chapterKey == normalizedKey
+                        )
+            }
+            ?.progress
+    }
+
+    internal fun putLongPageProgressForChapter(
+        chapterId: Long,
+        encodedProgress: Long,
+        chapterKey: String? = null,
+        maxEntries: Int = LONG_PAGE_PROGRESS_CACHE_LIMIT,
+    ) {
+        val pref = longPageProgressCache()
+        val entries = parseLongPageProgressCache(pref.get()).toMutableList()
+        entries.removeAll { it.chapterId == chapterId }
+        entries.add(
+            0,
+            LongPageProgressEntry(
+                chapterId = chapterId,
+                chapterKey = chapterKey?.takeIf { it.isNotBlank() },
+                progress = encodedProgress,
+            ),
+        )
+        val trimmed = entries.take(maxEntries.coerceAtLeast(1))
+        pref.set(serializeLongPageProgressCache(trimmed))
+    }
+
+    internal fun removeLongPageProgressForChapter(
+        chapterId: Long,
+        chapterKey: String? = null,
+    ) {
+        val pref = longPageProgressCache()
+        val normalizedKey = chapterKey?.takeIf { it.isNotBlank() }
+        val filtered = parseLongPageProgressCache(pref.get())
+            .filterNot { entry ->
+                entry.chapterId == chapterId &&
+                    (
+                        normalizedKey == null ||
+                            entry.chapterKey == normalizedKey
+                        )
+            }
+        pref.set(serializeLongPageProgressCache(filtered))
+    }
+
+    internal fun importLongPageProgressFromLegacyIfMissing(
+        chapterId: Long,
+        legacyProgress: Long,
+        chapterKey: String? = null,
+    ): Long {
+        val cached = getLongPageProgressForChapter(chapterId, chapterKey)
+        if (cached != null) return cached
+        putLongPageProgressForChapter(chapterId, legacyProgress, chapterKey = chapterKey)
+        return legacyProgress
+    }
+
+    // endregion
+
+    fun dualPageSplitPaged() = preferenceStore.getBoolean("pref_dual_page_split", false)
+
+    fun dualPageInvertPaged() = preferenceStore.getBoolean("pref_dual_page_invert", false)
+
+    fun joinDoublePages() = preferenceStore.getBoolean("pref_join_double_pages", false)
+
+    fun shiftDoublePages() = preferenceStore.getBoolean("pref_shift_double_pages", false)
+
+    fun adaptivePreload() = preferenceStore.getBoolean("pref_adaptive_preload", false)
+
+    fun sharpening() = preferenceStore.getInt("pref_sharpening", 0)
+
+    fun denoise() = preferenceStore.getInt("pref_denoise", 0)
+
+    fun binarization() = preferenceStore.getInt("pref_binarization", 0)
+
+    fun dualPageSplitWebtoon() = preferenceStore.getBoolean("pref_dual_page_split_webtoon", false)
+
+    fun dualPageInvertWebtoon() = preferenceStore.getBoolean("pref_dual_page_invert_webtoon", false)
+
+    fun dualPageRotateToFit() = preferenceStore.getBoolean("pref_dual_page_rotate", false)
+
+    fun dualPageRotateToFitInvert() = preferenceStore.getBoolean(
+        "pref_dual_page_rotate_invert",
+        false,
+    )
+
+    fun dualPageRotateToFitWebtoon() = preferenceStore.getBoolean(
+        "pref_dual_page_rotate_webtoon",
+        false,
+    )
+
+    fun dualPageRotateToFitInvertWebtoon() = preferenceStore.getBoolean(
+        "pref_dual_page_rotate_invert_webtoon",
+        false,
+    )
+
+    // endregion
+
+    // region Color filter
+
+    fun customBrightness() = preferenceStore.getBoolean("pref_custom_brightness_key", false)
+
+    fun customBrightnessValue() = preferenceStore.getInt("custom_brightness_value", 0)
+
+    fun colorFilter() = preferenceStore.getBoolean("pref_color_filter_key", false)
+
+    fun colorFilterValue() = preferenceStore.getInt("color_filter_value", 0)
+
+    fun colorFilterMode() = preferenceStore.getInt("color_filter_mode", 0)
+
+    fun grayscale() = preferenceStore.getBoolean("pref_grayscale", false)
+
+    fun invertedColors() = preferenceStore.getBoolean("pref_inverted_colors", false)
+
+    // endregion
+
+    // region Controls
+
+    fun readWithLongTap() = preferenceStore.getBoolean("reader_long_tap", true)
+
+    fun readWithVolumeKeys() = preferenceStore.getBoolean("reader_volume_keys", false)
+
+    fun readWithVolumeKeysInverted() = preferenceStore.getBoolean(
+        "reader_volume_keys_inverted",
+        false,
+    )
+
+    fun navigationModePager() = preferenceStore.getInt("reader_navigation_mode_pager", 0)
+
+    fun navigationModeWebtoon() = preferenceStore.getInt("reader_navigation_mode_webtoon", 0)
+
+    fun customTapZoneActions() = preferenceStore.getString(
+        "reader_custom_tap_zone_actions",
+        CUSTOM_TAP_ZONES_DEFAULT,
+    )
+
+    fun enablePinchToZoom() = preferenceStore.getBoolean("reader_enable_pinch_to_zoom", true)
+
+    fun pagerNavInverted() = preferenceStore.getEnum(
+        "reader_tapping_inverted",
+        TappingInvertMode.NONE,
+    )
+
+    fun webtoonNavInverted() = preferenceStore.getEnum(
+        "reader_tapping_inverted_webtoon",
+        TappingInvertMode.NONE,
+    )
+
+    fun showNavigationOverlayOnStart() = preferenceStore.getBoolean(
+        "reader_navigation_overlay_on_start",
+        false,
+    )
+
+    // region Navigator (Chapter progress bar) settings
+
+    fun showNavigator() = preferenceStore.getBoolean("pref_show_navigator", true)
+
+    fun navigatorShowPageNumbers() = preferenceStore.getBoolean(
+        "pref_navigator_show_page_numbers",
+        true,
+    )
+
+    fun navigatorShowChapterButtons() = preferenceStore.getBoolean(
+        "pref_navigator_show_chapter_buttons",
+        true,
+    )
+
+    fun navigatorSliderColor() = preferenceStore.getInt("pref_navigator_slider_color", 0)
+
+    fun navigatorBackgroundAlpha() = preferenceStore.getInt("pref_navigator_background_alpha", 90)
+
+    fun navigatorHeight() = preferenceStore.getEnum(
+        "pref_navigator_height",
+        NavigatorHeight.NORMAL,
+    )
+
+    fun navigatorCornerRadius() = preferenceStore.getInt("pref_navigator_corner_radius", 24)
+
+    fun navigatorShowTickMarks() = preferenceStore.getBoolean(
+        "pref_navigator_show_tick_marks",
+        true,
+    )
+
+    fun bottomBarPosition() = preferenceStore.getEnum(
+        "reader_bottom_bar_position",
+        BottomBarPosition.BOTTOM,
+    )
+
+    // endregion
+
+    // endregion
+
+    enum class FlashColor {
+        BLACK,
+        WHITE,
+        WHITE_BLACK,
+    }
+
+    enum class TappingInvertMode(
+        val titleRes: StringResource,
+        val shouldInvertHorizontal: Boolean = false,
+        val shouldInvertVertical: Boolean = false,
+    ) {
+        NONE(MR.strings.tapping_inverted_none),
+        HORIZONTAL(MR.strings.tapping_inverted_horizontal, shouldInvertHorizontal = true),
+        VERTICAL(MR.strings.tapping_inverted_vertical, shouldInvertVertical = true),
+        BOTH(
+            MR.strings.tapping_inverted_both,
+            shouldInvertHorizontal = true,
+            shouldInvertVertical = true,
+        ),
+    }
+
+    enum class ReaderHideThreshold(val threshold: Int) {
+        HIGHEST(5),
+        HIGH(13),
+        LOW(31),
+        LOWEST(47),
+    }
+
+    enum class NavigatorHeight(val titleRes: StringResource, val heightDp: Int) {
+        COMPACT(MR.strings.navigator_height_compact, 40),
+        NORMAL(MR.strings.navigator_height_normal, 48),
+        LARGE(MR.strings.navigator_height_large, 56),
+    }
+
+    enum class BottomBarPosition(val titleRes: StringResource) {
+        BOTTOM(MR.strings.bottom_bar_position_bottom),
+        LEFT(MR.strings.bottom_bar_position_left),
+        RIGHT(MR.strings.bottom_bar_position_right),
+    }
+
+    companion object {
+        const val WEBTOON_PADDING_MIN = 0
+        const val WEBTOON_PADDING_MAX = 25
+        const val PRELOAD_PAGES_MIN = 0
+        const val PRELOAD_PAGES_MAX = 8
+        const val DEFAULT_IMAGE_CACHE_SIZE_MB = 100
+        const val MIN_IMAGE_CACHE_SIZE_MB = 50
+        const val MAX_IMAGE_CACHE_SIZE_MB = 1_024
+
+        const val MILLI_CONVERSION = 100
+        private const val LONG_PAGE_PROGRESS_CACHE_LIMIT = 1_000
+        private const val LONG_PAGE_PROGRESS_ENTRY_SEPARATOR = ';'
+        private const val LONG_PAGE_PROGRESS_KEY_VALUE_SEPARATOR = ':'
+        private const val LONG_PAGE_PROGRESS_ID_KEY_SEPARATOR = '|'
+        private val LONG_PAGE_PROGRESS_CACHE_KEY =
+            Preference.appStateKey("reader_manga_long_page_progress_cache")
+
+        val TapZones = listOf(
+            MR.strings.label_default,
+            MR.strings.l_nav,
+            MR.strings.kindlish_nav,
+            MR.strings.edge_nav,
+            MR.strings.right_and_left_nav,
+            MR.strings.disabled_nav,
+            MR.strings.grid_nav,
+        )
+
+        val ImageScaleType = listOf(
+            MR.strings.scale_type_fit_screen,
+            MR.strings.scale_type_stretch,
+            MR.strings.scale_type_fit_width,
+            MR.strings.scale_type_fit_height,
+            MR.strings.scale_type_original_size,
+            MR.strings.scale_type_smart_fit,
+        )
+
+        val ZoomStart = listOf(
+            MR.strings.zoom_start_automatic,
+            MR.strings.zoom_start_left,
+            MR.strings.zoom_start_right,
+            MR.strings.zoom_start_center,
+        )
+
+        val ColorFilterMode = buildList {
+            addAll(
+                listOf(
+                    MR.strings.label_default to BlendMode.SrcOver,
+                    MR.strings.filter_mode_multiply to BlendMode.Modulate,
+                    MR.strings.filter_mode_screen to BlendMode.Screen,
+                ),
+            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                addAll(
+                    listOf(
+                        MR.strings.filter_mode_overlay to BlendMode.Overlay,
+                        MR.strings.filter_mode_lighten to BlendMode.Lighten,
+                        MR.strings.filter_mode_darken to BlendMode.Darken,
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun longPageProgressCache() = preferenceStore.getString(LONG_PAGE_PROGRESS_CACHE_KEY, "")
+
+    private fun parseLongPageProgressCache(raw: String): List<LongPageProgressEntry> {
+        if (raw.isBlank()) return emptyList()
+        return raw
+            .split(LONG_PAGE_PROGRESS_ENTRY_SEPARATOR)
+            .mapNotNull { entry ->
+                val separatorIndex = entry.indexOf(LONG_PAGE_PROGRESS_KEY_VALUE_SEPARATOR)
+                if (separatorIndex <= 0 || separatorIndex >= entry.lastIndex) {
+                    return@mapNotNull null
+                }
+                val idAndKey = entry.substring(0, separatorIndex)
+                val keySeparatorIndex = idAndKey.indexOf(LONG_PAGE_PROGRESS_ID_KEY_SEPARATOR)
+                val chapterId = idAndKey.substring(0, keySeparatorIndex.takeIf { it >= 0 } ?: idAndKey.length)
+                    .toLongOrNull() ?: return@mapNotNull null
+                val chapterKey = if (keySeparatorIndex >= 0 && keySeparatorIndex < idAndKey.lastIndex) {
+                    idAndKey.substring(keySeparatorIndex + 1).takeIf { it.isNotBlank() }
+                } else {
+                    null
+                }
+                val progress = entry.substring(separatorIndex + 1).toLongOrNull() ?: return@mapNotNull null
+                LongPageProgressEntry(chapterId = chapterId, chapterKey = chapterKey, progress = progress)
+            }
+    }
+
+    private fun serializeLongPageProgressCache(entries: List<LongPageProgressEntry>): String {
+        return entries.joinToString(separator = LONG_PAGE_PROGRESS_ENTRY_SEPARATOR.toString()) {
+            val idAndKey = if (it.chapterKey.isNullOrBlank()) {
+                it.chapterId.toString()
+            } else {
+                "${it.chapterId}$LONG_PAGE_PROGRESS_ID_KEY_SEPARATOR${it.chapterKey}"
+            }
+            "$idAndKey$LONG_PAGE_PROGRESS_KEY_VALUE_SEPARATOR${it.progress}"
+        }
+    }
+
+    private data class LongPageProgressEntry(
+        val chapterId: Long,
+        val chapterKey: String?,
+        val progress: Long,
+    )
+}

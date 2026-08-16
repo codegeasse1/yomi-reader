@@ -1,0 +1,1006 @@
+package eu.kanade.tachiyomi.ui.browse.novel.source.browse
+
+import eu.kanade.domain.base.BasePreferences
+import eu.kanade.domain.entries.novel.interactor.UpdateNovel
+import eu.kanade.domain.source.novel.interactor.GetNovelIncognitoState
+import eu.kanade.domain.source.service.SourcePreferences
+import eu.kanade.domain.ui.UiPreferences
+import eu.kanade.tachiyomi.extension.novel.NovelExtensionManager
+import eu.kanade.tachiyomi.novelsource.NovelCatalogueSource
+import eu.kanade.tachiyomi.novelsource.NovelSource
+import eu.kanade.tachiyomi.novelsource.model.NovelFilter
+import eu.kanade.tachiyomi.novelsource.model.NovelFilterList
+import eu.kanade.tachiyomi.novelsource.model.NovelsPage
+import eu.kanade.tachiyomi.novelsource.model.SNovel
+import eu.kanade.tachiyomi.novelsource.model.SNovelChapter
+import eu.kanade.tachiyomi.novelsource.online.NovelHttpSource
+import eu.kanade.tachiyomi.test.PersistingPreferenceStore
+import eu.kanade.tachiyomi.ui.browse.search.SavedSearchFilterSerializer
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
+import io.mockk.clearMocks
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.yield
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import rx.Observable
+import tachiyomi.core.common.preference.InMemoryPreferenceStore
+import tachiyomi.core.common.preference.Preference
+import tachiyomi.core.common.preference.PreferenceStore
+import tachiyomi.data.achievement.handler.AchievementHandler
+import tachiyomi.domain.entries.novel.interactor.GetNovelByUrlAndSourceId
+import tachiyomi.domain.entries.novel.interactor.NetworkToLocalNovel
+import tachiyomi.domain.entries.novel.interactor.NovelFetchInterval
+import tachiyomi.domain.entries.novel.model.Novel
+import tachiyomi.domain.entries.novel.model.NovelUpdate
+import tachiyomi.domain.items.novelchapter.interactor.GetNovelChapters
+import tachiyomi.domain.source.model.SavedSearch
+import tachiyomi.domain.source.model.SourceType
+import tachiyomi.domain.source.novel.interactor.GetRemoteNovel
+import tachiyomi.domain.source.novel.repository.NovelSourceRepository
+import tachiyomi.domain.source.novel.service.NovelSourceManager
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.fullType
+import uy.kohesive.injekt.api.get
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.system.measureTimeMillis
+
+class BrowseNovelSourceScreenModelTest {
+    private val activeScreenModels = mutableListOf<BrowseNovelSourceScreenModel>()
+    private lateinit var achievementHandler: AchievementHandler
+
+    @BeforeEach
+    fun setup() {
+        Dispatchers.setMain(Dispatchers.Unconfined)
+        ensureUiPreferences()
+        ensureAchievementHandler()
+        ensureIncognitoState()
+    }
+
+    @AfterEach
+    fun tearDown() {
+        activeScreenModels.forEach { it.onDispose() }
+        activeScreenModels.clear()
+        runBlocking {
+            repeat(5) { yield() }
+        }
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `openNovel stores novel and returns id`() {
+        runBlocking {
+            val source = FakeNovelCatalogueSource(id = 1L, name = "Novel", lang = "en")
+            val sourceManager = FakeNovelSourceManager(source)
+            val prefs = SourcePreferences(FakePreferenceStore())
+            val remoteNovel = SNovel.create().apply {
+                url = "/novel"
+                title = "Novel"
+            }
+            val networkToLocal = NetworkToLocalNovel(FakeNovelRepository(insertId = 42L))
+            val getRemoteNovel = GetRemoteNovel(
+                repository = FakeNovelSourceRepository(),
+            )
+
+            val screenModel = track(
+                BrowseNovelSourceScreenModel(
+                    sourceId = 1L,
+                    listingQuery = null,
+                    sourceManager = sourceManager,
+                    getRemoteNovel = getRemoteNovel,
+                    sourcePreferences = prefs,
+                    getNovelByUrlAndSourceId = GetNovelByUrlAndSourceId(FakeNovelRepository()),
+                    networkToLocalNovel = networkToLocal,
+                ),
+            )
+
+            val result = screenModel.openNovel(remoteNovel)
+
+            result shouldBe 42L
+        }
+    }
+
+    @Test
+    fun `addNovelToLibrary marks local novel as favorite`() {
+        runBlocking {
+            val source = FakeNovelCatalogueSource(id = 1L, name = "Novel", lang = "en")
+            val sourceManager = FakeNovelSourceManager(source)
+            val prefs = SourcePreferences(FakePreferenceStore())
+            val remoteNovel = SNovel.create().apply {
+                url = "/novel-library-add"
+                title = "Novel"
+            }
+            val novelRepository = FakeNovelRepository(insertId = 77L)
+            val networkToLocal = NetworkToLocalNovel(novelRepository)
+            val getRemoteNovel = GetRemoteNovel(
+                repository = FakeNovelSourceRepository(),
+            )
+
+            val screenModel = track(
+                BrowseNovelSourceScreenModel(
+                    sourceId = 1L,
+                    listingQuery = null,
+                    sourceManager = sourceManager,
+                    getRemoteNovel = getRemoteNovel,
+                    sourcePreferences = prefs,
+                    getNovelByUrlAndSourceId = GetNovelByUrlAndSourceId(novelRepository),
+                    networkToLocalNovel = networkToLocal,
+                    updateNovel = UpdateNovel(
+                        novelRepository,
+                        NovelFetchInterval(GetNovelChapters(mockk())),
+                    ),
+                ),
+            )
+
+            val result = screenModel.addNovelToLibrary(remoteNovel)
+
+            result shouldBe true
+            novelRepository.lastNovelUpdate?.id shouldBe 77L
+            novelRepository.lastNovelUpdate?.favorite shouldBe true
+        }
+    }
+
+    @Test
+    fun `getDuplicateLibraryNovel returns matching favorite novel`() {
+        runBlocking {
+            val source = FakeNovelCatalogueSource(id = 1L, name = "Novel", lang = "en")
+            val sourceManager = FakeNovelSourceManager(source)
+            val prefs = SourcePreferences(FakePreferenceStore())
+            val duplicate = Novel.create().copy(
+                id = 90L,
+                title = "Same Title",
+                favorite = true,
+            )
+            val novelRepository = FakeNovelRepository(
+                insertId = 77L,
+                favorites = listOf(duplicate),
+            )
+            val getRemoteNovel = GetRemoteNovel(
+                repository = FakeNovelSourceRepository(),
+            )
+
+            val screenModel = track(
+                BrowseNovelSourceScreenModel(
+                    sourceId = 1L,
+                    listingQuery = null,
+                    sourceManager = sourceManager,
+                    getRemoteNovel = getRemoteNovel,
+                    sourcePreferences = prefs,
+                    getNovelByUrlAndSourceId = GetNovelByUrlAndSourceId(novelRepository),
+                    networkToLocalNovel = NetworkToLocalNovel(novelRepository),
+                    getNovelFavoritesInteractor = tachiyomi.domain.entries.novel.interactor.GetNovelFavorites(
+                        novelRepository,
+                    ),
+                ),
+            )
+
+            val localNovel = Novel.create().copy(
+                id = 77L,
+                title = "same title",
+                favorite = false,
+            )
+            val result = screenModel.getDuplicateLibraryNovel(localNovel)
+
+            result?.id shouldBe 90L
+        }
+    }
+
+    @Test
+    fun `applyFilters switches popular listing to blank search and increments filter version`() {
+        val source = FakeNovelCatalogueSource(id = 1L, name = "Novel", lang = "en")
+        val sourceManager = FakeNovelSourceManager(source)
+        val prefs = SourcePreferences(FakePreferenceStore())
+        val networkToLocal = NetworkToLocalNovel(FakeNovelRepository(insertId = 1L))
+        val getRemoteNovel = GetRemoteNovel(repository = FakeNovelSourceRepository())
+
+        val screenModel = track(
+            BrowseNovelSourceScreenModel(
+                sourceId = 1L,
+                listingQuery = GetRemoteNovel.QUERY_POPULAR,
+                sourceManager = sourceManager,
+                getRemoteNovel = getRemoteNovel,
+                sourcePreferences = prefs,
+                getNovelByUrlAndSourceId = GetNovelByUrlAndSourceId(FakeNovelRepository()),
+                networkToLocalNovel = networkToLocal,
+            ),
+        )
+
+        screenModel.state.value.filterVersion shouldBe 0
+        screenModel.applyFilters()
+        val state = screenModel.state.value
+        state.filterVersion shouldBe 1
+        val listing = state.listing as BrowseNovelSourceScreenModel.Listing.Search
+        listing.query shouldBe null
+    }
+
+    @Test
+    fun `applyFilters keeps search query and bumps version`() {
+        val source = FakeNovelCatalogueSource(id = 1L, name = "Novel", lang = "en")
+        val sourceManager = FakeNovelSourceManager(source)
+        val prefs = SourcePreferences(FakePreferenceStore())
+        val networkToLocal = NetworkToLocalNovel(FakeNovelRepository(insertId = 1L))
+        val getRemoteNovel = GetRemoteNovel(repository = FakeNovelSourceRepository())
+
+        val screenModel = track(
+            BrowseNovelSourceScreenModel(
+                sourceId = 1L,
+                listingQuery = null,
+                sourceManager = sourceManager,
+                getRemoteNovel = getRemoteNovel,
+                sourcePreferences = prefs,
+                getNovelByUrlAndSourceId = GetNovelByUrlAndSourceId(FakeNovelRepository()),
+                networkToLocalNovel = networkToLocal,
+            ),
+        )
+
+        screenModel.search(query = "ranobe")
+        screenModel.applyFilters()
+
+        val state = screenModel.state.value
+        (state.listing as BrowseNovelSourceScreenModel.Listing.Search).query shouldBe "ranobe"
+        state.toolbarQuery shouldBe "ranobe"
+        state.filterVersion shouldBe 1
+    }
+
+    @Test
+    fun `applyFilters switches popular listing to blank search when filters are available`() {
+        runBlocking {
+            val source = FakeNovelCatalogueSourceWithFilters(
+                id = 1L,
+                name = "Novel",
+                lang = "en",
+                filters = NovelFilterList(
+                    object : NovelFilter.Select<String>(
+                        name = "Sort",
+                        values = arrayOf("Popular", "Latest"),
+                        state = 0,
+                    ) {},
+                ),
+            )
+            val sourceManager = FakeNovelSourceManager(source)
+            val prefs = SourcePreferences(FakePreferenceStore())
+            val networkToLocal = NetworkToLocalNovel(FakeNovelRepository(insertId = 1L))
+            val getRemoteNovel = GetRemoteNovel(repository = FakeNovelSourceRepository())
+
+            val screenModel = track(
+                BrowseNovelSourceScreenModel(
+                    sourceId = 1L,
+                    listingQuery = GetRemoteNovel.QUERY_POPULAR,
+                    sourceManager = sourceManager,
+                    getRemoteNovel = getRemoteNovel,
+                    sourcePreferences = prefs,
+                    getNovelByUrlAndSourceId = GetNovelByUrlAndSourceId(FakeNovelRepository()),
+                    networkToLocalNovel = networkToLocal,
+                ),
+            )
+
+            repeat(20) {
+                if (screenModel.state.value.filters.isNotEmpty()) return@repeat
+                delay(10)
+            }
+
+            val beforeVersion = screenModel.state.value.filterVersion
+            screenModel.applyFilters()
+            val state = screenModel.state.value
+
+            val listing = state.listing as BrowseNovelSourceScreenModel.Listing.Search
+            listing.query shouldBe null
+            state.filterVersion shouldBe beforeVersion + 1
+        }
+    }
+
+    @Test
+    fun `applyFilters switches latest listing to blank search without exposing internal query`() {
+        val source = FakeNovelCatalogueSource(id = 1L, name = "Novel", lang = "en")
+        val sourceManager = FakeNovelSourceManager(source)
+        val prefs = SourcePreferences(FakePreferenceStore())
+        val networkToLocal = NetworkToLocalNovel(FakeNovelRepository(insertId = 1L))
+        val getRemoteNovel = GetRemoteNovel(repository = FakeNovelSourceRepository())
+
+        val screenModel = track(
+            BrowseNovelSourceScreenModel(
+                sourceId = 1L,
+                listingQuery = GetRemoteNovel.QUERY_LATEST,
+                sourceManager = sourceManager,
+                getRemoteNovel = getRemoteNovel,
+                sourcePreferences = prefs,
+                getNovelByUrlAndSourceId = GetNovelByUrlAndSourceId(FakeNovelRepository()),
+                networkToLocalNovel = networkToLocal,
+            ),
+        )
+
+        val beforeVersion = screenModel.state.value.filterVersion
+        screenModel.applyFilters()
+        val state = screenModel.state.value
+
+        val listing = state.listing as BrowseNovelSourceScreenModel.Listing.Search
+        listing.query shouldBe null
+        state.toolbarQuery shouldBe null
+        state.filterVersion shouldBe beforeVersion + 1
+    }
+
+    @Test
+    fun `init does not block when source filter loading is slow`() {
+        val source = SlowFilterNovelCatalogueSource(
+            id = 1L,
+            name = "Novel",
+            lang = "en",
+            delayMillis = 700L,
+        )
+        val sourceManager = FakeNovelSourceManager(source)
+        val prefs = SourcePreferences(FakePreferenceStore())
+        val networkToLocal = NetworkToLocalNovel(FakeNovelRepository(insertId = 1L))
+        val getRemoteNovel = GetRemoteNovel(repository = FakeNovelSourceRepository())
+
+        val screenModel: BrowseNovelSourceScreenModel
+        val elapsedMs = measureTimeMillis {
+            screenModel = track(
+                BrowseNovelSourceScreenModel(
+                    sourceId = 1L,
+                    listingQuery = null,
+                    sourceManager = sourceManager,
+                    getRemoteNovel = getRemoteNovel,
+                    sourcePreferences = prefs,
+                    getNovelByUrlAndSourceId = GetNovelByUrlAndSourceId(FakeNovelRepository()),
+                    networkToLocalNovel = networkToLocal,
+                ),
+            )
+        }
+
+        assertTrue(
+            elapsedMs < 300L,
+            "ScreenModel init blocked for ${elapsedMs}ms while loading filters",
+        )
+
+        screenModel.openFilterSheet()
+
+        assertTrue(
+            source.awaitFilterLoad(timeoutMillis = 2_000L),
+            "Slow filter loading did not finish in time",
+        )
+    }
+
+    @Test
+    fun `init loads filters asynchronously so filter chip can be shown`() {
+        runBlocking {
+            val source = FakeNovelCatalogueSourceWithFilters(
+                id = 1L,
+                name = "Novel",
+                lang = "en",
+                filters = NovelFilterList(
+                    object : NovelFilter.Text("Keyword", "") {},
+                ),
+            )
+            val sourceManager = FakeNovelSourceManager(source)
+            val prefs = SourcePreferences(FakePreferenceStore())
+            val networkToLocal = NetworkToLocalNovel(FakeNovelRepository(insertId = 1L))
+            val getRemoteNovel = GetRemoteNovel(repository = FakeNovelSourceRepository())
+
+            val screenModel = track(
+                BrowseNovelSourceScreenModel(
+                    sourceId = 1L,
+                    listingQuery = GetRemoteNovel.QUERY_POPULAR,
+                    sourceManager = sourceManager,
+                    getRemoteNovel = getRemoteNovel,
+                    sourcePreferences = prefs,
+                    getNovelByUrlAndSourceId = GetNovelByUrlAndSourceId(FakeNovelRepository()),
+                    networkToLocalNovel = networkToLocal,
+                ),
+            )
+
+            repeat(20) {
+                if (screenModel.state.value.filters.isNotEmpty()) return@repeat
+                delay(10)
+            }
+
+            screenModel.state.value.filters.isNotEmpty() shouldBe true
+            screenModel.state.value.filtersLoaded shouldBe true
+        }
+    }
+
+    private fun ensureIncognitoState() {
+        runCatching { Injekt.get<GetNovelIncognitoState>() }
+            .getOrElse {
+                // Registered in DomainModule for the app; unit tests never run that module. Build the
+                // real interactor so incognito preferences behave exactly as they do in production.
+                // This class never toggles incognito, so a plain in-memory store is enough here.
+                val basePreferences = runCatching { Injekt.get<BasePreferences>() }
+                    .getOrElse {
+                        BasePreferences(mockk(relaxed = true), PersistingPreferenceStore())
+                            .also { Injekt.addSingleton(fullType<BasePreferences>(), it) }
+                    }
+                val sourcePreferences = runCatching { Injekt.get<SourcePreferences>() }
+                    .getOrElse {
+                        SourcePreferences(PersistingPreferenceStore())
+                            .also { Injekt.addSingleton(fullType<SourcePreferences>(), it) }
+                    }
+                val extensionManager = runCatching { Injekt.get<NovelExtensionManager>() }
+                    .getOrElse {
+                        mockk<NovelExtensionManager>(relaxed = true).also { manager ->
+                            every { manager.getPluginId(any()) } returns null
+                            every { manager.getPluginIdAsFlow(any()) } returns flowOf(null)
+                            every { manager.isNsfwForSource(any()) } returns false
+                            every { manager.isNsfwForSourceAsFlow(any()) } returns flowOf(false)
+                            Injekt.addSingleton(fullType<NovelExtensionManager>(), manager)
+                        }
+                    }
+                Injekt.addSingleton(
+                    fullType<GetNovelIncognitoState>(),
+                    GetNovelIncognitoState(basePreferences, sourcePreferences, extensionManager),
+                )
+            }
+    }
+
+    private fun ensureUiPreferences() {
+        runCatching { Injekt.get<UiPreferences>() }
+            .getOrElse {
+                Injekt.addSingleton(fullType<UiPreferences>(), UiPreferences(InMemoryPreferenceStore()))
+            }
+    }
+
+    private fun ensureAchievementHandler() {
+        achievementHandler = mockk(relaxed = true)
+        runCatching { Injekt.get<AchievementHandler>() }
+            .getOrElse {
+                Injekt.addSingleton(fullType<AchievementHandler>(), achievementHandler)
+            }
+    }
+
+    private fun track(screenModel: BrowseNovelSourceScreenModel): BrowseNovelSourceScreenModel {
+        return screenModel.also(activeScreenModels::add)
+    }
+
+    private class FakeNovelRepository : tachiyomi.domain.entries.novel.repository.NovelRepository {
+        constructor(
+            insertId: Long? = null,
+            favorites: List<Novel> = emptyList(),
+        ) {
+            this.insertId = insertId
+            this.favorites = favorites
+        }
+
+        private val insertId: Long?
+        private val favorites: List<Novel>
+        var lastNovelUpdate: NovelUpdate? = null
+        override suspend fun getNovelById(id: Long): Novel = Novel.create()
+        override fun getNovelByIdAsFlow(id: Long) = MutableStateFlow(Novel.create())
+        override suspend fun getNovelByUrlAndSourceId(url: String, sourceId: Long): Novel? = null
+        override fun getNovelByUrlAndSourceIdAsFlow(url: String, sourceId: Long) =
+            MutableStateFlow<Novel?>(null)
+        override suspend fun getNovelFavorites(): List<Novel> = favorites
+        override suspend fun getReadNovelNotInLibrary(): List<Novel> = emptyList()
+
+        override fun getUpcomingNovels(statuses: Set<Long>): kotlinx.coroutines.flow.Flow<List<Novel>> =
+            kotlinx.coroutines.flow.flowOf(emptyList())
+        override suspend fun getLibraryNovel() = emptyList<tachiyomi.domain.library.novel.LibraryNovel>()
+        override fun getLibraryNovelAsFlow() = MutableStateFlow(
+            emptyList<tachiyomi.domain.library.novel.LibraryNovel>(),
+        )
+        override fun getNovelFavoritesBySourceId(sourceId: Long) = MutableStateFlow(emptyList<Novel>())
+        override suspend fun insertNovel(novel: Novel): Long? = insertId
+        override suspend fun updateNovel(update: tachiyomi.domain.entries.novel.model.NovelUpdate): Boolean {
+            lastNovelUpdate = update
+            return true
+        }
+        override suspend fun updateAllNovel(
+            novelUpdates: List<tachiyomi.domain.entries.novel.model.NovelUpdate>,
+        ): Boolean = true
+        override suspend fun resetNovelViewerFlags(): Boolean = true
+
+        override suspend fun updateNovelMetadata(
+            novelId: Long,
+            customTitle: String?,
+            customAuthor: String?,
+            customDescription: String?,
+            customGenre: List<String>?,
+            customStatus: Long?,
+        ): Boolean = true
+    }
+
+    private class FakeNovelSourceManager(
+        private val source: NovelCatalogueSource,
+    ) : NovelSourceManager {
+        override val isInitialized = MutableStateFlow(true)
+        override val catalogueSources: Flow<List<NovelCatalogueSource>> = MutableStateFlow(listOf(source))
+        override fun get(sourceKey: Long): NovelSource? = if (sourceKey == source.id) source else null
+        override fun getOrStub(sourceKey: Long): NovelSource = get(sourceKey)!!
+        override fun getOnlineSources(): List<NovelHttpSource> = listOf(source as NovelHttpSource)
+        override fun getCatalogueSources(): List<NovelCatalogueSource> = listOf(source)
+        override fun getStubSources() = emptyList<tachiyomi.domain.source.novel.model.StubNovelSource>()
+    }
+
+    @Suppress("OVERRIDE_DEPRECATION")
+    private class FakeNovelCatalogueSource(
+        override val id: Long,
+        override val name: String,
+        override val lang: String,
+    ) : NovelHttpSource {
+        override val supportsLatest: Boolean = true
+        override fun fetchPopularNovels(page: Int): Observable<NovelsPage> =
+            Observable.just(NovelsPage(emptyList(), false))
+        override fun fetchSearchNovels(
+            page: Int,
+            query: String,
+            filters: NovelFilterList,
+        ): Observable<NovelsPage> =
+            Observable.just(NovelsPage(emptyList(), false))
+        override fun fetchLatestUpdates(page: Int): Observable<NovelsPage> =
+            Observable.just(NovelsPage(emptyList(), false))
+        override fun getFilterList(): NovelFilterList = NovelFilterList()
+        override fun fetchNovelDetails(novel: SNovel): Observable<SNovel> = Observable.just(novel)
+        override fun fetchChapterList(novel: SNovel): Observable<List<SNovelChapter>> =
+            Observable.just(emptyList())
+        override fun fetchChapterText(chapter: SNovelChapter): Observable<String> = Observable.just("")
+    }
+
+    @Suppress("OVERRIDE_DEPRECATION")
+    private class SlowFilterNovelCatalogueSource(
+        override val id: Long,
+        override val name: String,
+        override val lang: String,
+        private val delayMillis: Long,
+    ) : NovelHttpSource {
+        private val filterLoaded = CountDownLatch(1)
+
+        fun awaitFilterLoad(timeoutMillis: Long): Boolean {
+            return filterLoaded.await(timeoutMillis, TimeUnit.MILLISECONDS)
+        }
+
+        override val supportsLatest: Boolean = true
+        override fun fetchPopularNovels(page: Int): Observable<NovelsPage> =
+            Observable.just(NovelsPage(emptyList(), false))
+        override fun fetchSearchNovels(
+            page: Int,
+            query: String,
+            filters: NovelFilterList,
+        ): Observable<NovelsPage> =
+            Observable.just(NovelsPage(emptyList(), false))
+        override fun fetchLatestUpdates(page: Int): Observable<NovelsPage> =
+            Observable.just(NovelsPage(emptyList(), false))
+        override fun getFilterList(): NovelFilterList {
+            return try {
+                Thread.sleep(delayMillis)
+                NovelFilterList()
+            } finally {
+                filterLoaded.countDown()
+            }
+        }
+        override fun fetchNovelDetails(novel: SNovel): Observable<SNovel> = Observable.just(novel)
+        override fun fetchChapterList(novel: SNovel): Observable<List<SNovelChapter>> =
+            Observable.just(emptyList())
+        override fun fetchChapterText(chapter: SNovelChapter): Observable<String> = Observable.just("")
+    }
+
+    @Suppress("OVERRIDE_DEPRECATION")
+    private class FakeNovelCatalogueSourceWithFilters(
+        override val id: Long,
+        override val name: String,
+        override val lang: String,
+        private val filters: NovelFilterList,
+    ) : NovelHttpSource {
+        override val supportsLatest: Boolean = true
+        override fun fetchPopularNovels(page: Int): Observable<NovelsPage> =
+            Observable.just(NovelsPage(emptyList(), false))
+        override fun fetchSearchNovels(
+            page: Int,
+            query: String,
+            filters: NovelFilterList,
+        ): Observable<NovelsPage> =
+            Observable.just(NovelsPage(emptyList(), false))
+        override fun fetchLatestUpdates(page: Int): Observable<NovelsPage> =
+            Observable.just(NovelsPage(emptyList(), false))
+        override fun getFilterList(): NovelFilterList = filters
+        override fun fetchNovelDetails(novel: SNovel): Observable<SNovel> = Observable.just(novel)
+        override fun fetchChapterList(novel: SNovel): Observable<List<SNovelChapter>> =
+            Observable.just(emptyList())
+        override fun fetchChapterText(chapter: SNovelChapter): Observable<String> = Observable.just("")
+    }
+
+    private class FakePreferenceStore : PreferenceStore {
+        private val longs = mutableMapOf<String, Preference<Long>>()
+        private val objects = mutableMapOf<String, Preference<Any>>()
+
+        override fun getString(key: String, defaultValue: String): Preference<String> =
+            FakePreference(defaultValue)
+        override fun getLong(key: String, defaultValue: Long): Preference<Long> =
+            longs.getOrPut(key) { FakePreference(defaultValue) }
+        override fun getInt(key: String, defaultValue: Int): Preference<Int> =
+            FakePreference(defaultValue)
+        override fun getFloat(key: String, defaultValue: Float): Preference<Float> =
+            FakePreference(defaultValue)
+        override fun getBoolean(key: String, defaultValue: Boolean): Preference<Boolean> =
+            FakePreference(defaultValue)
+        override fun getStringSet(key: String, defaultValue: Set<String>): Preference<Set<String>> =
+            FakePreference(defaultValue)
+
+        @Suppress("UNCHECKED_CAST")
+        override fun <T> getObject(
+            key: String,
+            defaultValue: T,
+            serializer: (T) -> String,
+            deserializer: (String) -> T,
+        ): Preference<T> {
+            return objects.getOrPut(key) { FakePreference(defaultValue as Any) } as Preference<T>
+        }
+        override fun getAll(): Map<String, *> = emptyMap<String, Any>()
+    }
+
+    private class FakePreference<T>(
+        initial: T,
+    ) : Preference<T> {
+        private val state = MutableStateFlow(initial)
+        override fun key(): String = "fake"
+        override fun get(): T = state.value
+        override fun set(value: T) {
+            state.value = value
+        }
+        override fun isSet(): Boolean = true
+        override fun delete() = Unit
+        override fun defaultValue(): T = state.value
+        override fun changes() = state
+        override fun stateIn(scope: kotlinx.coroutines.CoroutineScope) = state
+    }
+
+    private class FakeNovelSourceRepository : NovelSourceRepository {
+        override fun getNovelSources() = MutableStateFlow(emptyList<tachiyomi.domain.source.novel.model.Source>())
+        override fun getOnlineNovelSources() = MutableStateFlow(emptyList<tachiyomi.domain.source.novel.model.Source>())
+        override fun getNovelSourcesWithFavoriteCount() =
+            MutableStateFlow(emptyList<Pair<tachiyomi.domain.source.novel.model.Source, Long>>())
+        override fun getNovelSourcesWithNonLibraryNovels() =
+            MutableStateFlow(emptyList<tachiyomi.domain.source.novel.model.NovelSourceWithCount>())
+        override fun searchNovels(
+            sourceId: Long,
+            query: String,
+            filterList: NovelFilterList,
+        ) = TODO()
+        override fun getPopularNovels(sourceId: Long, filterList: NovelFilterList) = TODO()
+        override fun getLatestNovels(sourceId: Long, filterList: NovelFilterList) = TODO()
+    }
+
+    @Test
+    fun `novelSourcePreferencesScreenOrNull returns null for source without settings`() {
+        val result = novelSourcePreferencesScreenOrNull(sourceId = 1L, isSourceConfigurable = false)
+        result shouldBe null
+    }
+
+    @Test
+    fun `novelSourcePreferencesScreenOrNull returns screen for configurable source`() {
+        val result = novelSourcePreferencesScreenOrNull(sourceId = 1L, isSourceConfigurable = true)
+        result shouldNotBe null
+    }
+
+    @Test
+    fun `SavedSearch filterable is false when there are no saved searches`() {
+        val state = BrowseNovelSourceScreenModel.State(
+            listing = BrowseNovelSourceScreenModel.Listing.Popular,
+        )
+
+        state.filterable shouldBe false
+    }
+
+    @Test
+    fun `SavedSearch filterable is true when saved searches exist`() {
+        val state = BrowseNovelSourceScreenModel.State(
+            listing = BrowseNovelSourceScreenModel.Listing.Popular,
+            savedSearches = persistentListOf(
+                SavedSearch(
+                    id = 1L,
+                    source = 42L,
+                    sourceType = SourceType.NOVEL,
+                    name = "saved",
+                    query = "q",
+                    filtersJson = null,
+                ) to false,
+            ),
+        )
+
+        state.filterable shouldBe true
+    }
+
+    @Test
+    fun `novel saved search filters roundtrip`() {
+        val original = NovelFilterList(
+            TestText("Query", "wolf"),
+            TestSelect("Sort", 1),
+            TestPicker("Edition", 0),
+            TestCheckBox("Only Free", true),
+            TestSwitch("Has Audio", true),
+            TestTriState("Dub", NovelFilter.TriState.STATE_INCLUDE),
+            TestXCheckBox("Downloaded", NovelFilter.XCheckBox.STATE_EXCLUDE),
+            TestGroup("Group", listOf(TestCheckBox("Nested", true))),
+            TestSort("Order", NovelFilter.Sort.Selection(1, true)),
+        )
+
+        val json = SavedSearchFilterSerializer.serialize(original)
+        val restored = NovelFilterList(
+            TestText("Query"),
+            TestSelect("Sort"),
+            TestPicker("Edition"),
+            TestCheckBox("Only Free"),
+            TestSwitch("Has Audio"),
+            TestTriState("Dub"),
+            TestXCheckBox("Downloaded"),
+            TestGroup("Group", listOf(TestCheckBox("Nested"))),
+            TestSort("Order"),
+        )
+
+        SavedSearchFilterSerializer.deserialize(json, restored)
+
+        restored[0].state shouldBe "wolf"
+        restored[1].state shouldBe 1
+        restored[2].state shouldBe 0
+        restored[3].state shouldBe true
+        restored[4].state shouldBe true
+        restored[5].state shouldBe NovelFilter.TriState.STATE_INCLUDE
+        restored[6].state shouldBe NovelFilter.XCheckBox.STATE_EXCLUDE
+        (restored[7] as TestGroup).state.first().state shouldBe true
+        (restored[8] as TestSort).state shouldBe NovelFilter.Sort.Selection(1, true)
+    }
+
+    @Suppress("OVERRIDE_DEPRECATION")
+    private class FakeConfigurableNovelCatalogueSource(
+        override val id: Long,
+        override val name: String,
+        override val lang: String,
+    ) : NovelHttpSource, eu.kanade.tachiyomi.novelsource.ConfigurableNovelSource {
+        override val supportsLatest: Boolean = true
+        override fun fetchPopularNovels(page: Int): Observable<NovelsPage> =
+            Observable.just(NovelsPage(emptyList(), false))
+        override fun fetchSearchNovels(
+            page: Int,
+            query: String,
+            filters: NovelFilterList,
+        ): Observable<NovelsPage> =
+            Observable.just(NovelsPage(emptyList(), false))
+        override fun fetchLatestUpdates(page: Int): Observable<NovelsPage> =
+            Observable.just(NovelsPage(emptyList(), false))
+        override fun getFilterList(): NovelFilterList = NovelFilterList()
+        override fun fetchNovelDetails(novel: SNovel): Observable<SNovel> = Observable.just(novel)
+        override fun fetchChapterList(novel: SNovel): Observable<List<SNovelChapter>> =
+            Observable.just(emptyList())
+        override fun fetchChapterText(chapter: SNovelChapter): Observable<String> = Observable.just("")
+        override fun setupPreferenceScreen(screen: androidx.preference.PreferenceScreen) {
+            // No-op for test
+        }
+    }
+
+    private class TestSelect(
+        name: String,
+        state: Int = 0,
+    ) : NovelFilter.Select<String>(name, arrayOf("A", "B"), state)
+
+    private class TestPicker(
+        name: String,
+        state: Int = 0,
+    ) : NovelFilter.Picker<String>(name, arrayOf("A", "B"), state)
+
+    private class TestText(
+        name: String,
+        state: String = "",
+    ) : NovelFilter.Text(name, state)
+
+    private class TestCheckBox(
+        name: String,
+        state: Boolean = false,
+    ) : NovelFilter.CheckBox(name, state)
+
+    private class TestSwitch(
+        name: String,
+        state: Boolean = false,
+    ) : NovelFilter.Switch(name, state)
+
+    private class TestTriState(
+        name: String,
+        state: Int = NovelFilter.TriState.STATE_IGNORE,
+    ) : NovelFilter.TriState(name, state)
+
+    private class TestXCheckBox(
+        name: String,
+        state: Int = NovelFilter.XCheckBox.STATE_IGNORE,
+    ) : NovelFilter.XCheckBox(name, state)
+
+    private class TestGroup(
+        name: String,
+        state: List<NovelFilter<*>>,
+    ) : NovelFilter.Group<NovelFilter<*>>(name, state)
+
+    private class TestSort(
+        name: String,
+        state: NovelFilter.Sort.Selection? = null,
+    ) : NovelFilter.Sort(name, arrayOf("A", "B"), state)
+
+    @Test
+    fun `search with non-empty query and default filters triggers SEARCH event`() {
+        runBlocking {
+            val source = FakeNovelCatalogueSource(id = 1L, name = "Novel", lang = "en")
+            val sourceManager = FakeNovelSourceManager(source)
+            val prefs = SourcePreferences(FakePreferenceStore())
+            val remoteNovel = SNovel.create().apply {
+                url = "/novel"
+                title = "Novel"
+            }
+            val networkToLocal = NetworkToLocalNovel(FakeNovelRepository(insertId = 42L))
+            val getRemoteNovel = GetRemoteNovel(repository = FakeNovelSourceRepository())
+
+            val screenModel = track(
+                BrowseNovelSourceScreenModel(
+                    sourceId = 1L,
+                    listingQuery = null,
+                    sourceManager = sourceManager,
+                    getRemoteNovel = getRemoteNovel,
+                    sourcePreferences = prefs,
+                    getNovelByUrlAndSourceId = GetNovelByUrlAndSourceId(FakeNovelRepository()),
+                    networkToLocalNovel = networkToLocal,
+                    achievementHandler = achievementHandler,
+                ),
+            )
+
+            // When searching with query and default filters
+            screenModel.search(query = "ranobe", filters = source.getFilterList())
+
+            // Then SEARCH event is tracked, not ADVANCED_SEARCH
+            io.mockk.verify(exactly = 1) {
+                achievementHandler.trackFeatureUsed(tachiyomi.domain.achievement.model.AchievementEvent.Feature.SEARCH)
+            }
+            io.mockk.verify(exactly = 0) {
+                achievementHandler.trackFeatureUsed(
+                    tachiyomi.domain.achievement.model.AchievementEvent.Feature.ADVANCED_SEARCH,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `search with non-empty query and active filters triggers ADVANCED_SEARCH event`() {
+        runBlocking {
+            val source = FakeNovelCatalogueSourceWithFilters(
+                id = 1L,
+                name = "Novel",
+                lang = "en",
+                filters = NovelFilterList(
+                    TestText("Keyword", ""),
+                ),
+            )
+            val sourceManager = FakeNovelSourceManager(source)
+            val prefs = SourcePreferences(FakePreferenceStore())
+            val networkToLocal = NetworkToLocalNovel(FakeNovelRepository(insertId = 42L))
+            val getRemoteNovel = GetRemoteNovel(repository = FakeNovelSourceRepository())
+
+            val screenModel = track(
+                BrowseNovelSourceScreenModel(
+                    sourceId = 1L,
+                    listingQuery = null,
+                    sourceManager = sourceManager,
+                    getRemoteNovel = getRemoteNovel,
+                    sourcePreferences = prefs,
+                    getNovelByUrlAndSourceId = GetNovelByUrlAndSourceId(FakeNovelRepository()),
+                    networkToLocalNovel = networkToLocal,
+                    achievementHandler = achievementHandler,
+                ),
+            )
+
+            // Set active (different from default) filters
+            val activeFilters = NovelFilterList(
+                TestText("Keyword", "active-value"),
+            )
+
+            // When searching with query and active filters
+            screenModel.search(query = "ranobe", filters = activeFilters)
+
+            // Then ADVANCED_SEARCH event is tracked, not SEARCH
+            io.mockk.verify(exactly = 1) {
+                achievementHandler.trackFeatureUsed(
+                    tachiyomi.domain.achievement.model.AchievementEvent.Feature.ADVANCED_SEARCH,
+                )
+            }
+            io.mockk.verify(exactly = 0) {
+                achievementHandler.trackFeatureUsed(tachiyomi.domain.achievement.model.AchievementEvent.Feature.SEARCH)
+            }
+        }
+    }
+
+    @Test
+    fun `setFilters with identical filters does not trigger FILTER event`() {
+        runBlocking {
+            val source = FakeNovelCatalogueSourceWithFilters(
+                id = 1L,
+                name = "Novel",
+                lang = "en",
+                filters = NovelFilterList(
+                    TestText("Keyword", "initial"),
+                ),
+            )
+            val sourceManager = FakeNovelSourceManager(source)
+            val prefs = SourcePreferences(FakePreferenceStore())
+            val networkToLocal = NetworkToLocalNovel(FakeNovelRepository(insertId = 42L))
+            val getRemoteNovel = GetRemoteNovel(repository = FakeNovelSourceRepository())
+
+            val screenModel = track(
+                BrowseNovelSourceScreenModel(
+                    sourceId = 1L,
+                    listingQuery = null,
+                    sourceManager = sourceManager,
+                    getRemoteNovel = getRemoteNovel,
+                    sourcePreferences = prefs,
+                    getNovelByUrlAndSourceId = GetNovelByUrlAndSourceId(FakeNovelRepository()),
+                    networkToLocalNovel = networkToLocal,
+                    achievementHandler = achievementHandler,
+                ),
+            )
+
+            // Initial filters set
+            val initialFilters = NovelFilterList(
+                TestText("Keyword", "initial"),
+            )
+            screenModel.setFilters(initialFilters)
+            io.mockk.clearMocks(achievementHandler)
+
+            // Now apply identical filters again
+            val identicalFilters = NovelFilterList(
+                TestText("Keyword", "initial"),
+            )
+            screenModel.setFilters(identicalFilters)
+
+            // Then FILTER event is NOT tracked
+            io.mockk.verify(exactly = 0) {
+                achievementHandler.trackFeatureUsed(tachiyomi.domain.achievement.model.AchievementEvent.Feature.FILTER)
+            }
+        }
+    }
+
+    @Test
+    fun `setFilters with changed filters triggers FILTER event`() {
+        runBlocking {
+            val source = FakeNovelCatalogueSourceWithFilters(
+                id = 1L,
+                name = "Novel",
+                lang = "en",
+                filters = NovelFilterList(
+                    TestText("Keyword", "initial"),
+                ),
+            )
+            val sourceManager = FakeNovelSourceManager(source)
+            val prefs = SourcePreferences(FakePreferenceStore())
+            val networkToLocal = NetworkToLocalNovel(FakeNovelRepository(insertId = 42L))
+            val getRemoteNovel = GetRemoteNovel(repository = FakeNovelSourceRepository())
+
+            val screenModel = track(
+                BrowseNovelSourceScreenModel(
+                    sourceId = 1L,
+                    listingQuery = null,
+                    sourceManager = sourceManager,
+                    getRemoteNovel = getRemoteNovel,
+                    sourcePreferences = prefs,
+                    getNovelByUrlAndSourceId = GetNovelByUrlAndSourceId(FakeNovelRepository()),
+                    networkToLocalNovel = networkToLocal,
+                    achievementHandler = achievementHandler,
+                ),
+            )
+
+            // Apply different filters
+            val changedFilters = NovelFilterList(
+                TestText("Keyword", "different"),
+            )
+            screenModel.setFilters(changedFilters)
+
+            // Then FILTER event is tracked
+            io.mockk.verify(exactly = 1) {
+                achievementHandler.trackFeatureUsed(tachiyomi.domain.achievement.model.AchievementEvent.Feature.FILTER)
+            }
+        }
+    }
+}

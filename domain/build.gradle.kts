@@ -1,0 +1,39 @@
+plugins {
+    id("mihon.library")
+    kotlin("plugin.serialization")
+}
+
+android {
+    namespace = "com.yomi.reader.domain"
+
+    defaultConfig {
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles("consumer-rules.pro")
+    }
+}
+
+kotlin {
+    compilerOptions {
+        freeCompilerArgs.add("-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi")
+    }
+}
+
+dependencies {
+    implementation(projects.sourceApi)
+    implementation(projects.core.common)
+
+    implementation(libs.jsoup)
+    compileOnly(libs.jspecify)
+    implementation(kotlinx.bundles.coroutines)
+    implementation(kotlinx.bundles.serialization)
+
+    implementation(libs.unifile)
+
+    // AndroidX Paging for PagingSource
+    api(libs.paging.common)
+
+    compileOnly(libs.compose.stablemarker)
+
+    testImplementation(libs.bundles.test)
+    testImplementation(kotlinx.coroutines.test)
+}

@@ -1,0 +1,106 @@
+package eu.kanade.tachiyomi.data.suggestions
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+
+class SuggestionTitleResolverTest {
+
+    @Test
+    fun `isFranchiseDuplicate returns true for identical cleaned titles`() {
+        assertTrue(SuggestionTitleResolver.isFranchiseDuplicate("Spear of Fate", "Spear of Fate"))
+    }
+
+    @Test
+    fun `isFranchiseDuplicate returns true for titles that differ only in volume markers`() {
+        assertTrue(
+            SuggestionTitleResolver.isFranchiseDuplicate(
+                "Re:Zero kara Hajimeru Isekai Seikatsu",
+                "Re:Zero kara Hajimeru Isekai Seikatsu (Vol. 1)",
+            ),
+        )
+    }
+
+    @Test
+    fun `isFranchiseDuplicate returns false for similar but distinct titles`() {
+        // After raising threshold 0.90 -> 0.95, "Spear of Fate" vs "Spear of Destiny"
+        // should be considered distinct works, not franchise duplicates.
+        assertFalse(
+            SuggestionTitleResolver.isFranchiseDuplicate("Spear of Fate", "Spear of Destiny"),
+        )
+    }
+
+    @Test
+    fun `isFranchiseDuplicate returns false for sequels with overlapping words`() {
+        // "Solo Leveling" vs "Solo Leveling Side Stories" should be distinct
+        // since they are different series and the user likely wants both as suggestions.
+        assertFalse(
+            SuggestionTitleResolver.isFranchiseDuplicate("Solo Leveling", "Solo Leveling Side Stories"),
+        )
+    }
+
+    @Test
+    fun `isFranchiseDuplicate returns false for completely unrelated titles`() {
+        assertFalse(
+            SuggestionTitleResolver.isFranchiseDuplicate("Attack on Titan", "Re:Zero"),
+        )
+    }
+
+    @Test
+    fun `isFranchiseDuplicate handles Cyrillic input correctly`() {
+        // Two completely different Cyrillic titles should not be flagged.
+        assertFalse(
+            SuggestionTitleResolver.isFranchiseDuplicate("Копьё Судьбы", "Атака Титанов"),
+        )
+    }
+
+    @Test
+    fun `isFranchiseDuplicate returns false for blank input`() {
+        assertFalse(SuggestionTitleResolver.isFranchiseDuplicate("", "Spear of Fate"))
+        assertFalse(SuggestionTitleResolver.isFranchiseDuplicate("Spear of Fate", ""))
+        assertFalse(SuggestionTitleResolver.isFranchiseDuplicate("", ""))
+    }
+
+    @Test
+    fun `scoreMatch returns 100 for exact case-insensitive match`() {
+        assertEquals(100, SuggestionTitleResolver.scoreMatch("Spear of Fate", "spear of fate"))
+    }
+
+    @Test
+    fun `scoreMatch returns 75 for prefix match`() {
+        assertEquals(75, SuggestionTitleResolver.scoreMatch("Spear", "Spear of Fate"))
+    }
+
+    @Test
+    fun `scoreMatch returns 50 for contains match`() {
+        assertEquals(50, SuggestionTitleResolver.scoreMatch("Fate", "Spear of Fate"))
+    }
+
+    @Test
+    fun `scoreMatch returns positive for partial token overlap`() {
+        val score = SuggestionTitleResolver.scoreMatch("Spear of Destiny", "Spear of Fate")
+        assert(score in 1..49) { "Expected token jaccard score 1..49, got $score" }
+    }
+
+    @Test
+    fun `resolveCandidates includes slug from ranobelib URL`() {
+        // Use the "Original:" pattern the parser recognises. Cyrillic
+        // originals are passed through the metadataAlternativeTitles list.
+        val candidates = SuggestionTitleResolver.resolveCandidates(
+            title = "Копьё Судьбы",
+            description = "Original: Spear of Fate",
+            url = "https://ranobelib.me/ru/book/264961--spear-of-fate",
+            metadataAlternativeTitles = listOf("Копьё Судьбы"),
+        )
+        assertTrue(candidates.contains("Копьё Судьбы"))
+        assertTrue(candidates.contains("Spear of Fate"))
+        assertTrue(candidates.contains("spear of fate"))
+    }
+
+    @Test
+    fun `cleanTitle strips volume markers and brackets`() {
+        val cleaned = SuggestionTitleResolver.cleanTitle("Re:Zero Vol. 1 (Light Novel)")
+        assertEquals("re zero", cleaned)
+    }
+}

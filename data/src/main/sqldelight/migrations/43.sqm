@@ -1,0 +1,1 @@
+-- Notes schema migration is now applied safely in the Android driver callback.

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="latticeprotocol_primary">#0095AE</color>
+    <color name="latticeprotocol_onPrimary">#00343E</color>
+    <color name="latticeprotocol_primaryContainer">#00536A</color>
+    <color name="latticeprotocol_onPrimaryContainer">#93ECFF</color>
+    <color name="latticeprotocol_secondary">#00718A</color>
+    <color name="latticeprotocol_onSecondary">#FFFFFF</color>
+    <color name="latticeprotocol_secondaryContainer">#004A5E</color>
+    <color name="latticeprotocol_onSecondaryContainer">#A0ECFF</color>
+    <color name="latticeprotocol_tertiary">#FFA726</color>
+    <color name="latticeprotocol_onTertiary">#442A00</color>
+    <color name="latticeprotocol_tertiaryContainer">#5C3600</color>
+    <color name="latticeprotocol_onTertiaryContainer">#FFE1B0</color>
+    <color name="latticeprotocol_background">#050608</color>
+    <color name="latticeprotocol_onBackground">#DDEAEE</color>
+    <color name="latticeprotocol_surface">#0A0C0E</color>
+    <color name="latticeprotocol_onSurface">#DDEAEE</color>
+    <color name="latticeprotocol_surfaceVariant">#182226</color>
+    <color name="latticeprotocol_onSurfaceVariant">#B2C2C8</color>
+    <color name="latticeprotocol_outline">#6F8289</color>
+    <color name="latticeprotocol_inverseOnSurface">#1D2629</color>
+    <color name="latticeprotocol_inverseSurface">#DFE9EC</color>
+    <color name="latticeprotocol_primaryInverse">#2BB8D0</color>
+    <color name="latticeprotocol_elevationOverlay">@color/latticeprotocol_primary</color>
+</resources>

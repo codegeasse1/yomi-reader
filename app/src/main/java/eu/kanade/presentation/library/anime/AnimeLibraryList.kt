@@ -1,0 +1,96 @@
+package eu.kanade.presentation.library.anime
+
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import eu.kanade.presentation.library.components.DownloadsBadge
+import eu.kanade.presentation.library.components.EntryListItem
+import eu.kanade.presentation.library.components.GlobalSearchItem
+import eu.kanade.presentation.library.components.LanguageBadge
+import eu.kanade.presentation.library.components.UnviewedBadge
+import eu.kanade.presentation.library.components.idsToHashSet
+import eu.kanade.presentation.library.components.shouldShowContinueViewingAction
+import eu.kanade.tachiyomi.ui.library.anime.AnimeLibraryItem
+import tachiyomi.domain.entries.anime.model.AnimeCover
+import tachiyomi.domain.library.anime.LibraryAnime
+import tachiyomi.presentation.core.components.FastScrollLazyColumn
+import tachiyomi.presentation.core.util.plus
+
+@Composable
+internal fun AnimeLibraryList(
+    items: List<AnimeLibraryItem>,
+    entries: Int,
+    containerHeight: Int,
+    contentPadding: PaddingValues,
+    selection: List<LibraryAnime>,
+    selectedIds: Set<Long> = selection.idsToHashSet { it.id },
+    state: LazyListState = rememberLazyListState(),
+    onClick: (LibraryAnime) -> Unit,
+    onLongClick: (LibraryAnime) -> Unit,
+    onClickContinueWatching: ((LibraryAnime) -> Unit)?,
+    searchQuery: String?,
+    onGlobalSearchClicked: () -> Unit,
+) {
+    FastScrollLazyColumn(
+        state = state,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = contentPadding + PaddingValues(vertical = 8.dp),
+    ) {
+        item {
+            if (!searchQuery.isNullOrEmpty()) {
+                GlobalSearchItem(
+                    modifier = Modifier.fillMaxWidth(),
+                    searchQuery = searchQuery,
+                    onClick = onGlobalSearchClicked,
+                )
+            }
+        }
+
+        items(
+            items = items,
+            key = { it.libraryAnime.id },
+            contentType = { "anime_library_list_item" },
+        ) { libraryItem ->
+            val anime = libraryItem.libraryAnime.anime
+            EntryListItem(
+                isSelected = selectedIds.contains(libraryItem.libraryAnime.id),
+                title = anime.displayTitle,
+                coverData = AnimeCover(
+                    animeId = anime.id,
+                    sourceId = anime.source,
+                    isAnimeFavorite = anime.favorite,
+                    url = anime.thumbnailUrl,
+                    lastModified = anime.coverLastModified,
+                ),
+                badge = {
+                    DownloadsBadge(count = libraryItem.downloadCount)
+                    UnviewedBadge(count = libraryItem.unseenCount)
+                    LanguageBadge(
+                        isLocal = libraryItem.isLocal,
+                        sourceLanguage = libraryItem.sourceLanguage,
+                    )
+                },
+                onLongClick = { onLongClick(libraryItem.libraryAnime) },
+                onClick = { onClick(libraryItem.libraryAnime) },
+                onClickContinueViewing = if (
+                    shouldShowContinueViewingAction(
+                        hasContinueAction = onClickContinueWatching != null,
+                        remainingCount = libraryItem.libraryAnime.unseenCount,
+                    )
+                ) {
+                    { onClickContinueWatching?.invoke(libraryItem.libraryAnime) }
+                } else {
+                    null
+                },
+                entries = entries,
+                containerHeight = containerHeight,
+            )
+        }
+    }
+}

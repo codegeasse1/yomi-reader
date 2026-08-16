@@ -1,0 +1,421 @@
+package eu.kanade.presentation.library.anime
+
+import android.content.res.Configuration
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import eu.kanade.presentation.components.AuroraAccordionItem
+import eu.kanade.presentation.components.AuroraBaseSortItem
+import eu.kanade.presentation.components.AuroraCheckboxItem
+import eu.kanade.presentation.components.AuroraChipRow
+import eu.kanade.presentation.components.AuroraDisplayModeTiles
+import eu.kanade.presentation.components.AuroraFilterChip
+import eu.kanade.presentation.components.AuroraHeadingItem
+import eu.kanade.presentation.components.AuroraSortItem
+import eu.kanade.presentation.components.AuroraSwitchItem
+import eu.kanade.presentation.components.AuroraTriStateItem
+import eu.kanade.presentation.components.TabbedDialog
+import eu.kanade.presentation.components.TabbedDialogPaddings
+import eu.kanade.presentation.library.auroraLibraryCardStyleOptions
+import eu.kanade.presentation.library.components.GroupPage
+import eu.kanade.tachiyomi.ui.library.anime.AnimeLibraryScreenModel
+import eu.kanade.tachiyomi.ui.library.anime.AnimeLibrarySettingsScreenModel
+import eu.kanade.tachiyomi.util.system.LocaleHelper
+import eu.kanade.tachiyomi.util.system.isReleaseBuildType
+import kotlinx.collections.immutable.persistentListOf
+import tachiyomi.core.common.preference.TriState
+import tachiyomi.domain.category.model.Category
+import tachiyomi.domain.library.anime.model.AnimeLibrarySort
+import tachiyomi.domain.library.anime.model.sort
+import tachiyomi.domain.library.model.LibraryDisplayMode
+import tachiyomi.domain.library.service.LibraryPreferences
+import tachiyomi.i18n.MR
+import tachiyomi.i18n.aniyomi.AYMR
+import tachiyomi.presentation.core.components.SliderItem
+import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.presentation.core.util.collectAsStateWithLifecycle
+
+@Composable
+fun AnimeLibrarySettingsDialog(
+    onDismissRequest: () -> Unit,
+    screenModel: AnimeLibrarySettingsScreenModel,
+    libraryScreenModel: AnimeLibraryScreenModel,
+    category: Category?,
+) {
+    val configuration = LocalConfiguration.current
+    val maxSheetHeight = (configuration.screenHeightDp * 0.72f).dp
+
+    TabbedDialog(
+        onDismissRequest = onDismissRequest,
+        modifier = Modifier.heightIn(max = maxSheetHeight),
+        tabTitles = persistentListOf(
+            stringResource(MR.strings.action_filter),
+            stringResource(MR.strings.action_sort),
+            stringResource(MR.strings.action_display),
+            stringResource(MR.strings.action_group),
+        ),
+    ) { page ->
+        Column(
+            modifier = Modifier
+                .padding(vertical = TabbedDialogPaddings.Vertical)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            when (page) {
+                0 -> FilterPage(
+                    screenModel = screenModel,
+                    libraryScreenModel = libraryScreenModel,
+                )
+                1 -> SortPage(
+                    category = category,
+                    screenModel = screenModel,
+                )
+                2 -> DisplayPage(
+                    screenModel = screenModel,
+                )
+                3 -> GroupPage(
+                    groupPreference = screenModel.libraryPreferences.animeGroupLibraryBy(),
+                    globalGroupPreference = screenModel.libraryPreferences.globalGroupLibrary(),
+                    globalGroupByPreference = screenModel.libraryPreferences.globalGroupLibraryBy(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ColumnScope.FilterPage(
+    screenModel: AnimeLibrarySettingsScreenModel,
+    libraryScreenModel: AnimeLibraryScreenModel,
+) {
+    val filterDownloaded by screenModel.libraryPreferences.filterDownloadedAnime().collectAsStateWithLifecycle()
+    val downloadedOnly by screenModel.preferences.downloadedOnly().collectAsStateWithLifecycle()
+    val autoUpdateAnimeRestrictions by screenModel.libraryPreferences
+        .autoUpdateItemRestrictions()
+        .collectAsStateWithLifecycle()
+
+    AuroraTriStateItem(
+        label = stringResource(MR.strings.label_downloaded),
+        state = if (downloadedOnly) {
+            TriState.ENABLED_IS
+        } else {
+            filterDownloaded
+        },
+        enabled = !downloadedOnly,
+        onClick = { screenModel.toggleFilter(LibraryPreferences::filterDownloadedAnime) },
+    )
+    val filterUnseen by screenModel.libraryPreferences.filterUnseen().collectAsStateWithLifecycle()
+    AuroraTriStateItem(
+        label = stringResource(AYMR.strings.action_filter_unseen),
+        state = filterUnseen,
+        onClick = { screenModel.toggleFilter(LibraryPreferences::filterUnseen) },
+    )
+    val filterStarted by screenModel.libraryPreferences.filterStartedAnime().collectAsStateWithLifecycle()
+    AuroraTriStateItem(
+        label = stringResource(MR.strings.label_started),
+        state = filterStarted,
+        onClick = { screenModel.toggleFilter(LibraryPreferences::filterStartedAnime) },
+    )
+    val filterBookmarked by screenModel.libraryPreferences.filterBookmarkedAnime().collectAsStateWithLifecycle()
+    AuroraTriStateItem(
+        label = stringResource(MR.strings.action_filter_bookmarked),
+        state = filterBookmarked,
+        onClick = { screenModel.toggleFilter(LibraryPreferences::filterBookmarkedAnime) },
+    )
+    val filterCompleted by screenModel.libraryPreferences.filterCompletedAnime().collectAsStateWithLifecycle()
+    AuroraTriStateItem(
+        label = stringResource(MR.strings.completed),
+        state = filterCompleted,
+        onClick = { screenModel.toggleFilter(LibraryPreferences::filterCompletedAnime) },
+    )
+    // TODO: re-enable when custom intervals are ready for stable
+    if ((!isReleaseBuildType) && LibraryPreferences.ENTRY_OUTSIDE_RELEASE_PERIOD in autoUpdateAnimeRestrictions) {
+        val filterIntervalCustom by screenModel.libraryPreferences.filterIntervalCustom().collectAsStateWithLifecycle()
+        AuroraTriStateItem(
+            label = stringResource(MR.strings.action_filter_interval_custom),
+            state = filterIntervalCustom,
+            onClick = { screenModel.toggleFilter(LibraryPreferences::filterIntervalCustom) },
+        )
+    }
+
+    val trackers by screenModel.trackersFlow.collectAsStateWithLifecycle()
+    when (trackers.size) {
+        0 -> {
+            // No trackers
+        }
+        1 -> {
+            val service = trackers[0]
+            val filterTracker by screenModel.libraryPreferences.filterTrackedAnime(
+                service.id.toInt(),
+            ).collectAsStateWithLifecycle()
+            AuroraTriStateItem(
+                label = stringResource(MR.strings.action_filter_tracked),
+                state = filterTracker,
+                onClick = { screenModel.toggleTracker(service.id.toInt()) },
+            )
+        }
+        else -> {
+            AuroraHeadingItem(MR.strings.action_filter_tracked)
+            trackers.map { service ->
+                val filterTracker by screenModel.libraryPreferences.filterTrackedAnime(
+                    service.id.toInt(),
+                ).collectAsStateWithLifecycle()
+                AuroraTriStateItem(
+                    label = service.name,
+                    state = filterTracker,
+                    onClick = { screenModel.toggleTracker(service.id.toInt()) },
+                )
+            }
+        }
+    }
+
+    val state by libraryScreenModel.state.collectAsStateWithLifecycle()
+    if (state.libraryLanguages.isNotEmpty()) {
+        var languageExpanded by remember { mutableStateOf(false) }
+        AuroraAccordionItem(
+            label = stringResource(MR.strings.filter_language),
+            expanded = languageExpanded,
+            onToggle = { languageExpanded = !languageExpanded },
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Start,
+            ) {
+                TextButton(onClick = { libraryScreenModel.setAllLanguages(state.libraryLanguages.toSet()) }) {
+                    Text(text = stringResource(MR.strings.action_select_all))
+                }
+                TextButton(onClick = libraryScreenModel::clearLanguageFilter) {
+                    Text(text = stringResource(MR.strings.action_clear))
+                }
+            }
+            state.libraryLanguages.forEach { language ->
+                AuroraCheckboxItem(
+                    label = if (language == "all") {
+                        stringResource(MR.strings.label_local)
+                    } else {
+                        LocaleHelper.getLocalizedDisplayName(language)
+                    },
+                    checked = language in state.languageFilter,
+                    onClick = { libraryScreenModel.toggleLanguage(language) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ColumnScope.SortPage(
+    category: Category?,
+    screenModel: AnimeLibrarySettingsScreenModel,
+) {
+    val trackers by screenModel.trackersFlow.collectAsStateWithLifecycle()
+    val sortingMode = category.sort.type
+    val sortDescending = !category.sort.isAscending
+
+    val options = remember(trackers.isEmpty()) {
+        val trackerMeanPair = if (trackers.isNotEmpty()) {
+            MR.strings.action_sort_tracker_score to AnimeLibrarySort.Type.TrackerMean
+        } else {
+            null
+        }
+        listOfNotNull(
+            MR.strings.action_sort_alpha to AnimeLibrarySort.Type.Alphabetical,
+            AYMR.strings.action_sort_total_episodes to AnimeLibrarySort.Type.TotalEpisodes,
+            AYMR.strings.action_sort_last_seen to AnimeLibrarySort.Type.LastSeen,
+            AYMR.strings.action_sort_last_anime_update to AnimeLibrarySort.Type.LastUpdate,
+            AYMR.strings.action_sort_unseen_count to AnimeLibrarySort.Type.UnseenCount,
+            AYMR.strings.action_sort_latest_episode to AnimeLibrarySort.Type.LatestEpisode,
+            AYMR.strings.action_sort_episode_fetch_date to AnimeLibrarySort.Type.EpisodeFetchDate,
+            MR.strings.action_sort_date_added to AnimeLibrarySort.Type.DateAdded,
+            trackerMeanPair,
+            AYMR.strings.action_sort_airing_time to AnimeLibrarySort.Type.AiringTime,
+            MR.strings.action_sort_random to AnimeLibrarySort.Type.Random,
+        )
+    }
+
+    options.map { (titleRes, mode) ->
+        if (mode == AnimeLibrarySort.Type.Random) {
+            AuroraBaseSortItem(
+                label = stringResource(titleRes),
+                icon = Icons.Default.Refresh
+                    .takeIf { sortingMode == AnimeLibrarySort.Type.Random },
+                onClick = {
+                    screenModel.setSort(category, mode, AnimeLibrarySort.Direction.Ascending)
+                },
+            )
+            return@map
+        }
+        AuroraSortItem(
+            label = stringResource(titleRes),
+            sortDescending = sortDescending.takeIf { sortingMode == mode },
+            onClick = {
+                val isTogglingDirection = sortingMode == mode
+                val direction = when {
+                    isTogglingDirection -> if (sortDescending) {
+                        AnimeLibrarySort.Direction.Ascending
+                    } else {
+                        AnimeLibrarySort.Direction.Descending
+                    }
+                    else -> if (sortDescending) {
+                        AnimeLibrarySort.Direction.Descending
+                    } else {
+                        AnimeLibrarySort.Direction.Ascending
+                    }
+                }
+                screenModel.setSort(category, mode, direction)
+            },
+        )
+    }
+}
+
+private val displayModes = listOf(
+    MR.strings.action_display_grid to LibraryDisplayMode.CompactGrid,
+    MR.strings.action_display_comfortable_grid to LibraryDisplayMode.ComfortableGrid,
+    MR.strings.action_display_cover_only_grid to LibraryDisplayMode.CoverOnlyGrid,
+    MR.strings.action_display_list to LibraryDisplayMode.List,
+)
+
+@Composable
+private fun ColumnScope.DisplayPage(
+    screenModel: AnimeLibrarySettingsScreenModel,
+) {
+    val useSeparateDisplayModePerMedia by screenModel
+        .libraryPreferences
+        .separateDisplayModePerMedia()
+        .collectAsStateWithLifecycle()
+    AuroraSwitchItem(
+        label = stringResource(MR.strings.pref_library_display_mode_per_media),
+        pref = screenModel.libraryPreferences.separateDisplayModePerMedia(),
+    )
+
+    val displayModePref = remember(useSeparateDisplayModePerMedia) {
+        if (useSeparateDisplayModePerMedia) {
+            screenModel.libraryPreferences.animeDisplayMode()
+        } else {
+            screenModel.libraryPreferences.displayMode()
+        }
+    }
+    val displayMode by displayModePref.collectAsStateWithLifecycle()
+    AuroraHeadingItem(MR.strings.action_display_mode)
+    AuroraDisplayModeTiles(
+        options = displayModes,
+        selected = displayMode,
+        onSelect = { screenModel.setDisplayMode(it) },
+    )
+
+    val auroraCardStylePref = screenModel.libraryPreferences.auroraLibraryCardStyle()
+    val auroraCardStyle by auroraCardStylePref.collectAsStateWithLifecycle()
+    AuroraChipRow(MR.strings.pref_aurora_library_card_style) {
+        auroraLibraryCardStyleOptions().map { (titleRes, style) ->
+            AuroraFilterChip(
+                selected = auroraCardStyle == style,
+                onClick = { auroraCardStylePref.set(style) },
+                label = stringResource(titleRes),
+            )
+        }
+    }
+
+    val configuration = LocalConfiguration.current
+    val columnPreference = remember {
+        if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            screenModel.libraryPreferences.animeLandscapeColumns()
+        } else {
+            screenModel.libraryPreferences.animePortraitColumns()
+        }
+    }
+
+    val columns by columnPreference.collectAsStateWithLifecycle()
+    if (displayMode == LibraryDisplayMode.List) {
+        SliderItem(
+            value = columns,
+            valueRange = 0..10,
+            label = stringResource(AYMR.strings.pref_library_rows),
+            valueText = if (columns > 0) {
+                columns.toString()
+            } else {
+                stringResource(MR.strings.label_auto)
+            },
+            onChange = columnPreference::set,
+            pillColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        )
+    } else {
+        SliderItem(
+            value = columns,
+            valueRange = 0..10,
+            label = stringResource(MR.strings.pref_library_columns),
+            valueText = if (columns > 0) {
+                columns.toString()
+            } else {
+                stringResource(MR.strings.label_auto)
+            },
+            onChange = columnPreference::set,
+            pillColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        )
+    }
+
+    AuroraHeadingItem(MR.strings.overlay_header)
+    AuroraCheckboxItem(
+        label = stringResource(AYMR.strings.action_display_download_badge_anime),
+        pref = screenModel.libraryPreferences.downloadBadge(),
+    )
+    AuroraCheckboxItem(
+        label = stringResource(AYMR.strings.action_display_unseen_badge),
+        pref = screenModel.libraryPreferences.unreadBadge(),
+    )
+    AuroraCheckboxItem(
+        label = stringResource(MR.strings.action_display_local_badge),
+        pref = screenModel.libraryPreferences.localBadge(),
+    )
+    AuroraCheckboxItem(
+        label = stringResource(MR.strings.action_display_language_badge),
+        pref = screenModel.libraryPreferences.languageBadge(),
+    )
+    AuroraCheckboxItem(
+        label = stringResource(AYMR.strings.action_display_show_continue_reading_button),
+        pref = screenModel.libraryPreferences.showContinueViewingButton(),
+    )
+
+    AuroraHeadingItem(MR.strings.tabs_header)
+    AuroraCheckboxItem(
+        label = stringResource(MR.strings.action_display_show_tabs),
+        pref = screenModel.libraryPreferences.categoryTabs(),
+    )
+    AuroraCheckboxItem(
+        label = stringResource(MR.strings.action_display_show_number_of_items),
+        pref = screenModel.libraryPreferences.categoryNumberOfItems(),
+    )
+    AuroraCheckboxItem(
+        label = stringResource(AYMR.strings.action_display_full_number_of_items),
+        pref = screenModel.libraryPreferences.categoryFullNumberOfItems(),
+        description = stringResource(AYMR.strings.action_display_full_number_of_items_summary),
+    )
+    val showFullNumberOfItems by screenModel.libraryPreferences
+        .categoryFullNumberOfItems()
+        .collectAsStateWithLifecycle()
+    if (showFullNumberOfItems) {
+        AuroraCheckboxItem(
+            label = stringResource(AYMR.strings.action_display_grouped_number_of_items),
+            pref = screenModel.libraryPreferences.categoryGroupedNumberOfItems(),
+            description = stringResource(AYMR.strings.action_display_grouped_number_of_items_summary),
+        )
+    }
+}

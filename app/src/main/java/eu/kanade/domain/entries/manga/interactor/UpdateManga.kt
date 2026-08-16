@@ -1,0 +1,186 @@
+package eu.kanade.domain.entries.manga.interactor
+
+import android.util.Log
+import eu.kanade.domain.entries.manga.model.hasCustomCover
+import eu.kanade.domain.entries.manga.model.mergeRatings
+import eu.kanade.domain.entries.manga.model.resolveIncomingSourceRating
+import eu.kanade.tachiyomi.data.cache.MangaCoverCache
+import eu.kanade.tachiyomi.source.model.SManga
+import tachiyomi.domain.entries.manga.interactor.MangaFetchInterval
+import tachiyomi.domain.entries.manga.model.Manga
+import tachiyomi.domain.entries.manga.model.MangaUpdate
+import tachiyomi.domain.entries.manga.repository.MangaRepository
+import tachiyomi.source.local.entries.manga.isLocal
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
+import java.time.Instant
+import java.time.ZonedDateTime
+
+class UpdateManga(
+    private val mangaRepository: MangaRepository,
+    private val mangaFetchInterval: MangaFetchInterval,
+) {
+
+    suspend fun await(mangaUpdate: MangaUpdate): Boolean {
+        return mangaRepository.updateManga(mangaUpdate)
+    }
+
+    suspend fun awaitUpdateMetadata(
+        mangaId: Long,
+        customTitle: String?,
+        customArtist: String?,
+        customAuthor: String?,
+        customDescription: String?,
+        customGenre: List<String>?,
+        customStatus: Long?,
+    ): Boolean {
+        return mangaRepository.updateMangaMetadata(
+            mangaId = mangaId,
+            customTitle = customTitle,
+            customArtist = customArtist,
+            customAuthor = customAuthor,
+            customDescription = customDescription,
+            customGenre = customGenre,
+            customStatus = customStatus,
+        )
+    }
+
+    suspend fun awaitAll(mangaUpdates: List<MangaUpdate>): Boolean {
+        return mangaRepository.updateAllManga(mangaUpdates)
+    }
+
+    suspend fun awaitUpdateSourceRating(
+        localManga: Manga,
+        sourceRating: Float,
+    ): Boolean {
+        val mergedRating = mergeRatings(
+            current = localManga.rating,
+            incoming = sourceRating,
+        )
+        return mangaRepository.updateManga(
+            MangaUpdate(
+                id = localManga.id,
+                rating = mergedRating.takeIf { it >= 0f },
+            ),
+        )
+    }
+
+    suspend fun awaitUpdateFromSource(
+        localManga: Manga,
+        remoteManga: SManga,
+        manualFetch: Boolean,
+        coverCache: MangaCoverCache = Injekt.get(),
+    ): Boolean {
+        val remoteTitle = try {
+            remoteManga.title
+        } catch (_: UninitializedPropertyAccessException) {
+            ""
+        }
+
+        // if the manga isn't a favorite, set its title from source and update in db
+        val title = if (remoteTitle.isEmpty() || localManga.favorite) null else remoteTitle
+
+        // Only update cover if manual fetch OR we don't have a valid thumbnail yet
+        // This prevents flickering when extension returns different URLs (thumbnail vs full-size)
+        val shouldUpdateCover = manualFetch || localManga.thumbnailUrl.isNullOrEmpty() || !localManga.initialized
+
+        val coverLastModified =
+            when {
+                // Never refresh covers if the url is empty to avoid "losing" existing covers
+                remoteManga.thumbnail_url.isNullOrEmpty() -> null
+                // Don't update cover during automatic refresh if we already have one
+                !shouldUpdateCover -> null
+                localManga.isLocal() -> Instant.now().toEpochMilli()
+                localManga.hasCustomCover(coverCache) -> {
+                    null
+                }
+                else -> {
+                    coverCache.deleteFromCache(localManga, false)
+                    Instant.now().toEpochMilli()
+                }
+            }
+
+        // Only update thumbnailUrl if we're updating the cover (null = don't update field)
+        val thumbnailUrl = if (shouldUpdateCover) {
+            remoteManga.thumbnail_url?.takeIf { it.isNotEmpty() }
+        } else {
+            null
+        }
+        val incomingRating = resolveIncomingSourceRating(
+            rawRating = remoteManga.rating,
+            description = remoteManga.description,
+        )
+        val mergedRating = mergeRatings(
+            current = localManga.rating,
+            incoming = incomingRating,
+        )
+        debugLog(
+            "awaitUpdateFromSource: sourceManga title=${remoteManga.safeTitle().previewForLog()} rawRating=${remoteManga.rating} incomingRating=${incomingRating.previewFloat()} mergedRating=${mergedRating.previewFloat()} desc=${remoteManga.description.previewForLog()}",
+        )
+
+        return mangaRepository.updateManga(
+            MangaUpdate(
+                id = localManga.id,
+                title = title,
+                coverLastModified = coverLastModified,
+                author = remoteManga.author,
+                artist = remoteManga.artist,
+                description = remoteManga.description,
+                genre = remoteManga.getGenres(),
+                rating = mergedRating.takeIf { it >= 0f },
+                // 1.6 sources hand back context here (e.g. a rotating slug) and expect to get it
+                // back on the next call; dropping it makes later requests fail.
+                memo = remoteManga.memo.takeIf { it.isNotEmpty() },
+                thumbnailUrl = thumbnailUrl,
+                status = remoteManga.status.toLong(),
+                updateStrategy = remoteManga.update_strategy,
+                initialized = true,
+            ),
+        )
+    }
+
+    suspend fun awaitUpdateFetchInterval(
+        manga: Manga,
+        dateTime: ZonedDateTime = ZonedDateTime.now(),
+        window: Pair<Long, Long> = mangaFetchInterval.getWindow(dateTime),
+    ): Boolean {
+        return mangaRepository.updateManga(
+            mangaFetchInterval.toMangaUpdate(manga, dateTime, window),
+        )
+    }
+
+    suspend fun awaitUpdateLastUpdate(mangaId: Long): Boolean {
+        return mangaRepository.updateManga(MangaUpdate(id = mangaId, lastUpdate = Instant.now().toEpochMilli()))
+    }
+
+    suspend fun awaitUpdateCoverLastModified(mangaId: Long): Boolean {
+        return mangaRepository.updateManga(MangaUpdate(id = mangaId, coverLastModified = Instant.now().toEpochMilli()))
+    }
+
+    suspend fun awaitUpdateFavorite(mangaId: Long, favorite: Boolean): Boolean {
+        val dateAdded = when (favorite) {
+            true -> Instant.now().toEpochMilli()
+            false -> 0
+        }
+        return mangaRepository.updateManga(
+            MangaUpdate(id = mangaId, favorite = favorite, dateAdded = dateAdded),
+        )
+    }
+
+    private fun debugLog(message: String) {
+        runCatching { Log.d("UpdateManga", message) }
+    }
+
+    private fun String?.previewForLog(limit: Int = 120): String {
+        return this
+            ?.replace(Regex("\\s+"), " ")
+            ?.take(limit)
+            .orEmpty()
+    }
+
+    private fun Float.previewFloat(): String = String.format("%.3f", this)
+
+    private fun SManga.safeTitle(): String {
+        return runCatching { title }.getOrDefault("")
+    }
+}

@@ -1,0 +1,63 @@
+import mihon.buildlogic.AndroidConfig
+import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+
+plugins {
+    id("mihon.kmp.library")
+    kotlin("multiplatform")
+    kotlin("plugin.serialization")
+}
+
+kotlin {
+    android {
+        namespace = "eu.kanade.tachiyomi.source"
+        compileSdk = AndroidConfig.COMPILE_SDK
+        minSdk = AndroidConfig.MIN_SDK
+        withJava()
+        withHostTestBuilder { }
+
+        optimization {
+            consumerKeepRules.apply {
+                publish = true
+                file("consumer-proguard.pro")
+            }
+        }
+    }
+
+    sourceSets {
+        getByName("commonMain") {
+            dependencies {
+                api(kotlinx.serialization.json)
+                api(kotlinx.reflect)
+                api(libs.injekt)
+                api(libs.rxjava)
+                api(libs.jsoup)
+                compileOnly(libs.jspecify)
+
+                implementation(project.dependencies.platform(compose.bom))
+                implementation(compose.runtime)
+            }
+        }
+        getByName("commonTest") {
+            dependencies {
+                implementation(libs.bundles.test)
+                implementation(libs.kotlin.test)
+                implementation(kotlinx.coroutines.test)
+            }
+        }
+        getByName("androidMain") {
+            dependencies {
+                implementation(projects.core.common)
+                api(libs.preferencektx)
+
+                // Workaround for https://youtrack.jetbrains.com/issue/KT-57605
+                implementation(kotlinx.coroutines.android)
+                implementation(project.dependencies.platform(kotlinx.coroutines.bom))
+            }
+        }
+    }
+
+    @OptIn(ExperimentalKotlinGradlePluginApi::class)
+    compilerOptions {
+        freeCompilerArgs.add("-Xexpect-actual-classes")
+    }
+}

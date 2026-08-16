@@ -1,0 +1,63 @@
+import kotlin.Boolean;
+
+CREATE TABLE novel_books (
+    novel_id INTEGER NOT NULL PRIMARY KEY,
+    enabled INTEGER AS Boolean NOT NULL DEFAULT 0,
+    book_version INTEGER NOT NULL DEFAULT 0,
+    source_id INTEGER NOT NULL DEFAULT 0,
+    chapter_set_hash TEXT NOT NULL DEFAULT '',
+    total_chars INTEGER NOT NULL DEFAULT 0,
+    chapter_count INTEGER NOT NULL DEFAULT 0,
+    char_offset INTEGER NOT NULL DEFAULT 0,
+    last_chapter_id INTEGER,
+    block_index INTEGER NOT NULL DEFAULT 0,
+    chapter_char_offset INTEGER NOT NULL DEFAULT 0,
+    progress_migrated INTEGER AS Boolean NOT NULL DEFAULT 0,
+    complete INTEGER AS Boolean NOT NULL DEFAULT 0,
+    built_at INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY(novel_id) REFERENCES novels (_id)
+    ON DELETE CASCADE
+);
+
+getBook:
+SELECT *
+FROM novel_books
+WHERE novel_id = :novelId;
+
+getAllBooks:
+SELECT *
+FROM novel_books;
+
+getEnabledBooks:
+SELECT *
+FROM novel_books
+WHERE enabled = 1;
+
+upsert:
+INSERT OR REPLACE INTO novel_books(novel_id, enabled, book_version, source_id, chapter_set_hash, total_chars, chapter_count, char_offset, last_chapter_id, block_index, chapter_char_offset, progress_migrated, complete, built_at, updated_at)
+VALUES (:novelId, :enabled, :bookVersion, :sourceId, :chapterSetHash, :totalChars, :chapterCount, :charOffset, :lastChapterId, :blockIndex, :chapterCharOffset, :progressMigrated, :complete, :builtAt, :updatedAt);
+
+setEnabled:
+UPDATE novel_books
+SET enabled = :enabled,
+    updated_at = :updatedAt
+WHERE novel_id = :novelId;
+
+-- Writing a position always stores it in the locator columns, so the row is migrated by definition.
+setProgress:
+UPDATE novel_books
+SET char_offset = :charOffset,
+    last_chapter_id = :lastChapterId,
+    block_index = :blockIndex,
+    chapter_char_offset = :chapterCharOffset,
+    progress_migrated = 1,
+    updated_at = :updatedAt
+WHERE novel_id = :novelId;
+
+delete:
+DELETE FROM novel_books
+WHERE novel_id = :novelId;
+
+deleteAll:
+DELETE FROM novel_books;

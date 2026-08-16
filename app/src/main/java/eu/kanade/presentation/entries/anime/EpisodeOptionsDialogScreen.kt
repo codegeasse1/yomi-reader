@@ -1,0 +1,914 @@
+package eu.kanade.presentation.entries.anime
+
+import android.content.ClipData
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Input
+import androidx.compose.material.icons.automirrored.outlined.NavigateNext
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.SystemUpdateAlt
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import cafe.adriel.voyager.core.model.ScreenModel
+import cafe.adriel.voyager.core.model.rememberScreenModel
+import cafe.adriel.voyager.core.model.screenModelScope
+import eu.kanade.presentation.components.TabbedDialogPaddings
+import eu.kanade.presentation.util.Screen
+import eu.kanade.tachiyomi.animesource.AnimeSource
+import eu.kanade.tachiyomi.animesource.model.Hoster
+import eu.kanade.tachiyomi.animesource.model.Video
+import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
+import eu.kanade.tachiyomi.data.download.anime.AnimeDownloadManager
+import eu.kanade.tachiyomi.data.download.anime.VideoSizeEstimator
+import eu.kanade.tachiyomi.ui.main.MainActivity
+import eu.kanade.tachiyomi.ui.player.PlaybackPlayerPreference
+import eu.kanade.tachiyomi.ui.player.PlaybackSelection
+import eu.kanade.tachiyomi.ui.player.PlaybackSelectionPreferences
+import eu.kanade.tachiyomi.ui.player.PlaybackSelectionResolver
+import eu.kanade.tachiyomi.ui.player.controls.components.sheets.HosterState
+import eu.kanade.tachiyomi.ui.player.controls.components.sheets.QualitySheetHosterContent
+import eu.kanade.tachiyomi.ui.player.controls.components.sheets.QualitySheetVideoContent
+import eu.kanade.tachiyomi.ui.player.controls.components.sheets.getChangedAt
+import eu.kanade.tachiyomi.ui.player.hasVisiblePlaybackPreferences
+import eu.kanade.tachiyomi.ui.player.loader.EpisodeLoader
+import eu.kanade.tachiyomi.ui.player.loader.HosterLoader
+import eu.kanade.tachiyomi.ui.player.sanitizeVisiblePlaybackPreferences
+import eu.kanade.tachiyomi.util.system.toast
+import eu.kanade.tachiyomi.util.toSize
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import logcat.LogPriority
+import tachiyomi.core.common.preference.PreferenceStore
+import tachiyomi.core.common.util.lang.launchIO
+import tachiyomi.core.common.util.lang.launchUI
+import tachiyomi.core.common.util.lang.withIOContext
+import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.entries.anime.interactor.GetAnime
+import tachiyomi.domain.entries.anime.model.Anime
+import tachiyomi.domain.items.episode.interactor.GetEpisode
+import tachiyomi.domain.items.episode.model.Episode
+import tachiyomi.domain.source.anime.service.AnimeSourceManager
+import tachiyomi.i18n.MR
+import tachiyomi.i18n.aniyomi.AYMR
+import tachiyomi.presentation.core.components.material.padding
+import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.presentation.core.screens.LoadingScreen
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.cancellation.CancellationException
+
+class EpisodeOptionsDialogScreen(
+    private val useExternalDownloader: Boolean,
+    private val episodeTitle: String,
+    private val episodeId: Long,
+    private val animeId: Long,
+    private val sourceId: Long,
+) : Screen() {
+
+    @Composable
+    override fun Content() {
+        val sm = rememberScreenModel {
+            EpisodeOptionsDialogScreenModel(
+                episodeId = episodeId,
+                animeId = animeId,
+                sourceId = sourceId,
+            )
+        }
+
+        val episode by sm.episode.collectAsStateWithLifecycle()
+        val anime by sm.anime.collectAsStateWithLifecycle()
+        val hosterState by sm.hosterState.collectAsStateWithLifecycle()
+        val hosterExpandedList by sm.hosterExpandedList.collectAsStateWithLifecycle()
+        val selectedHosterVideoIndex by sm.selectedHosterVideoIndex.collectAsStateWithLifecycle()
+        val currentVideo by sm.currentVideo.collectAsStateWithLifecycle()
+        val showAllQualities by sm.showAllQualities.collectAsStateWithLifecycle()
+        val currentVideoSize by sm.currentVideoSize.collectAsStateWithLifecycle()
+
+        EpisodeOptionsDialog(
+            useExternalDownloader = useExternalDownloader,
+            episodeTitle = episodeTitle,
+            episode = episode,
+            anime = anime,
+            showAllQualities = showAllQualities,
+            resultList = hosterState,
+            expandedList = hosterExpandedList,
+            currentVideo = currentVideo,
+            currentVideoSize = currentVideoSize,
+            selectedHosterVideoIndex = selectedHosterVideoIndex,
+            onShowAllQualities = sm::onShowAllQualities,
+            onClickHoster = sm::onClickHoster,
+            onClickVideo = sm::onClickVideo,
+            getHosterList = sm::getHosterList,
+        )
+    }
+
+    companion object {
+        var onDismissDialog: () -> Unit = {}
+    }
+}
+
+class EpisodeOptionsDialogScreenModel(
+    episodeId: Long,
+    private val animeId: Long,
+    sourceId: Long,
+) : ScreenModel {
+    private val sourceManager: AnimeSourceManager = Injekt.get()
+    private val preferenceStore: PreferenceStore = Injekt.get()
+
+    private val _hosterState = MutableStateFlow<Result<List<HosterState>>?>(null)
+    val hosterState = _hosterState.asStateFlow()
+    private val _hosterExpandedList = MutableStateFlow<List<Boolean>>(emptyList())
+    val hosterExpandedList = _hosterExpandedList.asStateFlow()
+    private val _selectedHosterVideoIndex = MutableStateFlow(Pair(-1, -1))
+    val selectedHosterVideoIndex = _selectedHosterVideoIndex.asStateFlow()
+    private val _currentVideo = MutableStateFlow<Video?>(null)
+    val currentVideo = _currentVideo.asStateFlow()
+
+    /** Size of the currently selected quality, or null while unknown/unresolvable. */
+    private val _currentVideoSize = MutableStateFlow<VideoSizeEstimator.Estimate?>(null)
+    val currentVideoSize = _currentVideoSize.asStateFlow()
+    private var sizeProbeJob: Job? = null
+
+    private val _episode = MutableStateFlow<Episode?>(null)
+    val episode = _episode.asStateFlow()
+    private val _anime = MutableStateFlow<Anime?>(null)
+    val anime = _anime.asStateFlow()
+
+    @Suppress("ktlint:standard:backing-property-naming")
+    private val _hosterList = MutableStateFlow<List<Hoster>>(emptyList())
+
+    @Suppress("ktlint:standard:backing-property-naming")
+    private val _source = MutableStateFlow<AnimeSource?>(null)
+
+    private val _showAllQualities = MutableStateFlow(false)
+    val showAllQualities = _showAllQualities.asStateFlow()
+
+    private fun getPlaybackSelectionPreferences(): PlaybackSelectionPreferences {
+        return sanitizeVisiblePlaybackPreferences(
+            PlaybackSelectionPreferences(
+                preferredPlayer = PlaybackPlayerPreference.fromPreference(
+                    preferenceStore.getString("anime_player_pref_$animeId", PlaybackPlayerPreference.AUTO.name).get(),
+                ),
+                preferredDubbingCdn = preferenceStore.getString("anime_dubbing_pref_cdn_$animeId", "").get(),
+                preferredDubbingKodik = preferenceStore.getString("anime_dubbing_pref_kodik_$animeId", "").get(),
+                preferredDubbingParlorate = preferenceStore.getString(
+                    "anime_dubbing_pref_parlorate_$animeId",
+                    "",
+                ).get(),
+                preferredQualityCdn = preferenceStore.getString("anime_quality_pref_cdn_$animeId", "best").get(),
+                preferredQualityKodik = preferenceStore.getString("anime_quality_pref_kodik_$animeId", "best").get(),
+                preferredQualityParlorate = preferenceStore.getString(
+                    "anime_quality_pref_parlorate_$animeId",
+                    "best",
+                ).get(),
+            ),
+        )
+    }
+
+    private fun hasExplicitPlaybackPreferences(preferences: PlaybackSelectionPreferences): Boolean {
+        return hasVisiblePlaybackPreferences(preferences)
+    }
+
+    private fun findVideoByPlaybackPreferences(
+        hosterStates: List<HosterState>,
+        preferences: PlaybackSelectionPreferences,
+    ): Pair<Int, Int> {
+        return when (val selection = PlaybackSelectionResolver.resolve(hosterStates.mapToHosters(), preferences)) {
+            is PlaybackSelection.Selected -> selection.hosterIndex to selection.videoIndex
+            PlaybackSelection.None -> Pair(-1, -1)
+        }
+    }
+
+    private fun List<HosterState>.mapToHosters(): List<Hoster> {
+        return mapNotNull { state ->
+            val ready = state as? HosterState.Ready ?: return@mapNotNull null
+            Hoster(
+                hosterName = ready.name,
+                videoList = ready.videoList,
+                playerId = ready.playerId,
+                playerLabel = ready.playerLabel,
+                dubbingId = ready.dubbingId,
+                dubbingLabel = ready.dubbingLabel,
+                sortOrder = ready.sortOrder,
+            )
+        }
+    }
+
+    init {
+        val hasFoundPreferredVideo = AtomicBoolean(false)
+        val playbackPreferences = getPlaybackSelectionPreferences()
+
+        screenModelScope.launchIO {
+            val episode = Injekt.get<GetEpisode>().await(episodeId)!!
+            val anime = Injekt.get<GetAnime>().await(animeId)!!
+            val source = sourceManager.getOrStub(sourceId)
+
+            _episode.update { _ -> episode }
+            _anime.update { _ -> anime }
+            _source.update { _ -> source }
+
+            val hosterListResult = withIOContext {
+                try {
+                    Result.success(EpisodeLoader.getHosters(episode, anime, source))
+                } catch (e: Exception) {
+                    Result.failure(e)
+                }
+            }
+
+            if (hosterListResult.isFailure) {
+                _hosterState.update { _ -> Result.failure(hosterListResult.exceptionOrNull()!!) }
+                return@launchIO
+            }
+
+            val hosterList = hosterListResult.getOrThrow()
+            _hosterList.update { _ -> hosterList }
+            _hosterExpandedList.update { _ ->
+                List(hosterList.size) { true }
+            }
+
+            val initialHosterState = hosterList.map { hoster ->
+                if (hoster.videoList == null) {
+                    HosterState.Loading(
+                        name = hoster.hosterName,
+                        playerId = hoster.playerId,
+                        playerLabel = hoster.playerLabel,
+                        dubbingId = hoster.dubbingId,
+                        dubbingLabel = hoster.dubbingLabel,
+                        sortOrder = hoster.sortOrder,
+                    )
+                } else {
+                    val videoList = hoster.videoList!!
+                    HosterState.Ready(
+                        name = hoster.hosterName,
+                        videoList = videoList,
+                        videoState = List(videoList.size) { Video.State.LOAD_VIDEO },
+                        playerId = hoster.playerId,
+                        playerLabel = hoster.playerLabel,
+                        dubbingId = hoster.dubbingId,
+                        dubbingLabel = hoster.dubbingLabel,
+                        sortOrder = hoster.sortOrder,
+                    )
+                }
+            }
+
+            _hosterState.update { _ -> Result.success(initialHosterState) }
+
+            try {
+                hosterList.mapIndexed { hosterIdx, hoster ->
+                    async {
+                        val hosterState = EpisodeLoader.loadHosterVideos(source, hoster)
+
+                        _hosterState.updateAt(hosterIdx, hosterState)
+
+                        if (hosterState is HosterState.Ready) {
+                            val prefIndex = hosterState.videoList.indexOfFirst { it.preferred }
+                            if (!hasExplicitPlaybackPreferences(playbackPreferences) && prefIndex != -1) {
+                                if (hasFoundPreferredVideo.compareAndSet(false, true)) {
+                                    val success =
+                                        loadVideo(source, hosterState.videoList[prefIndex], hosterIdx, prefIndex)
+                                    if (!success) {
+                                        hasFoundPreferredVideo.set(false)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }.awaitAll()
+
+                if (hasFoundPreferredVideo.compareAndSet(false, true)) {
+                    val hosterStateList = hosterState.value!!.getOrThrow()
+                    var (hosterIdx, videoIdx) = findVideoByPlaybackPreferences(
+                        hosterStateList,
+                        playbackPreferences,
+                    )
+
+                    if (hosterIdx == -1) {
+                        val legacyDubbing = playbackPreferences.preferredDubbingCdn.ifBlank {
+                            playbackPreferences.preferredDubbingKodik
+                        }
+                        val legacyQuality = if (legacyDubbing == playbackPreferences.preferredDubbingKodik) {
+                            playbackPreferences.preferredQualityKodik
+                        } else {
+                            playbackPreferences.preferredQualityCdn
+                        }
+                        val legacy = findVideoByDubbingAndQuality(
+                            hosterStateList,
+                            legacyDubbing,
+                            legacyQuality,
+                        )
+                        hosterIdx = legacy.first
+                        videoIdx = legacy.second
+                    }
+
+                    if (hosterIdx == -1) {
+                        val best = HosterLoader.selectBestVideo(hosterStateList)
+                        hosterIdx = best.first
+                        videoIdx = best.second
+                    }
+
+                    if (hosterIdx == -1) {
+                        _hosterState.update { _ ->
+                            Result.failure(NoSuchElementException("No available videos"))
+                        }
+                        return@launchIO
+                    }
+
+                    val video = (hosterStateList[hosterIdx] as HosterState.Ready).videoList[videoIdx]
+
+                    loadVideo(source, video, hosterIdx, videoIdx)
+                }
+            } catch (e: CancellationException) {
+                _hosterState.update { _ ->
+                    Result.success(
+                        hosterList.map {
+                            HosterState.Idle(
+                                name = it.hosterName,
+                                playerId = it.playerId,
+                                playerLabel = it.playerLabel,
+                                dubbingId = it.dubbingId,
+                                dubbingLabel = it.dubbingLabel,
+                                sortOrder = it.sortOrder,
+                            )
+                        },
+                    )
+                }
+
+                throw e
+            }
+        }
+    }
+
+    private suspend fun loadVideo(source: AnimeSource, video: Video, hosterIndex: Int, videoIndex: Int): Boolean {
+        val selectedHosterState = (_hosterState.value!!.getOrThrow()[hosterIndex] as? HosterState.Ready) ?: return false
+
+        val oldSelectedIndex = _selectedHosterVideoIndex.value
+        _selectedHosterVideoIndex.update { _ -> Pair(hosterIndex, videoIndex) }
+
+        _hosterState.updateAt(
+            hosterIndex,
+            selectedHosterState.getChangedAt(videoIndex, video, Video.State.LOAD_VIDEO),
+        )
+
+        val resolvedVideo = if (selectedHosterState.videoState[videoIndex] != Video.State.READY) {
+            HosterLoader.getResolvedVideo(source, video)
+        } else {
+            video
+        }
+
+        if (resolvedVideo == null || resolvedVideo.videoUrl.isEmpty()) {
+            if (currentVideo.value == null) {
+                _hosterState.updateAt(
+                    hosterIndex,
+                    selectedHosterState.getChangedAt(videoIndex, video, Video.State.ERROR),
+                )
+
+                val hosterStateList = hosterState.value?.getOrNull() ?: return false
+
+                val (newHosterIdx, newVideoIdx) = HosterLoader.selectBestVideo(hosterStateList)
+                if (newHosterIdx == -1) {
+                    _hosterState.update { _ ->
+                        Result.failure(NoSuchElementException("No available videos"))
+                    }
+                    return false
+                }
+
+                val newVideo = (hosterStateList[newHosterIdx] as HosterState.Ready).videoList[newVideoIdx]
+
+                return loadVideo(source, newVideo, newHosterIdx, newVideoIdx)
+            } else {
+                _selectedHosterVideoIndex.update { _ -> oldSelectedIndex }
+                _hosterState.updateAt(
+                    hosterIndex,
+                    selectedHosterState.getChangedAt(videoIndex, video, Video.State.ERROR),
+                )
+                return false
+            }
+        }
+
+        _hosterState.updateAt(
+            hosterIndex,
+            selectedHosterState.getChangedAt(videoIndex, resolvedVideo, Video.State.READY),
+        )
+        _currentVideo.update { _ -> resolvedVideo }
+        probeVideoSize(resolvedVideo)
+
+        return true
+    }
+
+    /**
+     * Looks up the size of the selected quality. Runs off the main thread and never blocks the
+     * dialog: the size simply appears once resolved. Superseded probes are cancelled so switching
+     * qualities quickly cannot leave a stale value behind.
+     */
+    private fun probeVideoSize(video: Video) {
+        sizeProbeJob?.cancel()
+        _currentVideoSize.update { _ -> null }
+
+        sizeProbeJob = screenModelScope.launchIO {
+            val estimate = VideoSizeEstimator.estimate(video, _source.value as? AnimeHttpSource)
+            _currentVideoSize.update { _ -> estimate }
+        }
+    }
+
+    private fun <T> MutableStateFlow<Result<List<T>>?>.updateAt(index: Int, newValue: T) {
+        this.update { values ->
+            values?.getOrNull()?.let {
+                Result.success(
+                    it.toMutableList().apply {
+                        this[index] = newValue
+                    },
+                )
+            } ?: values
+        }
+    }
+
+    fun onShowAllQualities(value: Boolean) {
+        _showAllQualities.update { _ -> value }
+    }
+
+    fun onClickHoster(hosterIndex: Int) {
+        val hosterState = hosterState.value?.getOrNull()?.getOrNull(hosterIndex) ?: return
+
+        when (hosterState) {
+            is HosterState.Ready -> {
+                _hosterExpandedList.update { values ->
+                    values.toMutableList().apply {
+                        this[hosterIndex] = !hosterExpandedList.value[hosterIndex]
+                    }
+                }
+            }
+            is HosterState.Error, is HosterState.Idle -> {
+                _hosterState.updateAt(
+                    hosterIndex,
+                    HosterState.Loading(
+                        name = hosterState.name,
+                        playerId = hosterState.playerId,
+                        playerLabel = hosterState.playerLabel,
+                        dubbingId = hosterState.dubbingId,
+                        dubbingLabel = hosterState.dubbingLabel,
+                        sortOrder = hosterState.sortOrder,
+                    ),
+                )
+
+                screenModelScope.launchIO {
+                    val newHosterState = EpisodeLoader.loadHosterVideos(
+                        _source.value!!,
+                        _hosterList.value[hosterIndex],
+                    )
+                    _hosterState.updateAt(hosterIndex, newHosterState)
+                }
+            }
+            is HosterState.Loading -> {}
+        }
+    }
+
+    fun onClickVideo(hosterIndex: Int, videoIndex: Int) {
+        val video = (_hosterState.value?.getOrNull()?.getOrNull(hosterIndex) as? HosterState.Ready)
+            ?.videoList
+            ?.getOrNull(videoIndex)
+            ?: return
+
+        _anime.value?.let { anime ->
+            preferenceStore.getString("anime_video_pref_${anime.id}", "").set(video.videoTitle)
+        }
+
+        screenModelScope.launchIO {
+            val success = loadVideo(_source.value!!, video, hosterIndex, videoIndex)
+            if (success) {
+                _showAllQualities.update { _ -> false }
+            }
+        }
+    }
+
+    fun getHosterList(): List<Hoster>? {
+        val hosterStateList = hosterState.value?.getOrNull() ?: return null
+        return _hosterList.value.mapIndexed { index, h ->
+            if (hosterStateList[index] is HosterState.Ready) {
+                Hoster(
+                    hosterName = h.hosterName,
+                    hosterUrl = h.hosterUrl,
+                    videoList = (hosterStateList[index] as HosterState.Ready).videoList,
+                    playerId = h.playerId,
+                    playerLabel = h.playerLabel,
+                    dubbingId = h.dubbingId,
+                    dubbingLabel = h.dubbingLabel,
+                    sortOrder = h.sortOrder,
+                )
+            } else {
+                Hoster(
+                    hosterName = h.hosterName,
+                    hosterUrl = h.hosterUrl,
+                    videoList = h.videoList,
+                    playerId = h.playerId,
+                    playerLabel = h.playerLabel,
+                    dubbingId = h.dubbingId,
+                    dubbingLabel = h.dubbingLabel,
+                    sortOrder = h.sortOrder,
+                )
+            }
+        }
+    }
+
+    private fun findVideoByDubbingAndQuality(
+        hosterStates: List<HosterState>,
+        preferredDubbing: String,
+        preferredQuality: String,
+    ): Pair<Int, Int> {
+        if (preferredDubbing.isBlank()) {
+            return Pair(-1, -1)
+        }
+
+        val qualityOrder = listOf("1080p", "720p", "480p", "360p")
+
+        data class VideoCandidate(
+            val hosterIdx: Int,
+            val videoIdx: Int,
+            val qualityRank: Int,
+        )
+
+        val candidates = mutableListOf<VideoCandidate>()
+
+        hosterStates.forEachIndexed { hIdx, hState ->
+            if (hState is HosterState.Ready) {
+                val hosterName = hState.name
+
+                if (hosterName.equals(preferredDubbing, ignoreCase = true)) {
+                    hState.videoList.forEachIndexed { vIdx, video ->
+                        val title = video.videoTitle.lowercase()
+                        val qualityRank = when {
+                            preferredQuality == "best" -> {
+                                qualityOrder.indexOfFirst { title.contains(it.lowercase()) }
+                                    .let { if (it == -1) 999 else it }
+                            }
+                            title.contains(preferredQuality.lowercase()) -> 0
+                            else -> {
+                                qualityOrder.indexOfFirst { title.contains(it.lowercase()) }
+                                    .let { if (it == -1) 999 else it + 1 }
+                            }
+                        }
+                        candidates.add(VideoCandidate(hIdx, vIdx, qualityRank))
+                    }
+                }
+            }
+        }
+
+        if (candidates.isEmpty()) return Pair(-1, -1)
+
+        val best = candidates.minByOrNull { it.qualityRank }
+        return best?.let { Pair(it.hosterIdx, it.videoIdx) } ?: Pair(-1, -1)
+    }
+}
+
+@Composable
+fun EpisodeOptionsDialog(
+    useExternalDownloader: Boolean,
+    episodeTitle: String,
+    episode: Episode?,
+    anime: Anime?,
+    showAllQualities: Boolean,
+    resultList: Result<List<HosterState>>? = null,
+    expandedList: List<Boolean>,
+    currentVideo: Video?,
+    currentVideoSize: VideoSizeEstimator.Estimate? = null,
+    selectedHosterVideoIndex: Pair<Int, Int>,
+    onShowAllQualities: (Boolean) -> Unit,
+    onClickHoster: (Int) -> Unit,
+    onClickVideo: (Int, Int) -> Unit,
+    getHosterList: () -> List<Hoster>?,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    Column(
+        modifier = Modifier
+            .animateContentSize()
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(vertical = TabbedDialogPaddings.Vertical)
+            .windowInsetsPadding(WindowInsets.systemBars),
+        verticalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
+    ) {
+        Text(
+            text = episodeTitle,
+            modifier = Modifier.padding(horizontal = TabbedDialogPaddings.Horizontal),
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            style = MaterialTheme.typography.titleSmall,
+        )
+
+        Text(
+            text = stringResource(AYMR.strings.choose_video_quality),
+            modifier = Modifier.padding(horizontal = TabbedDialogPaddings.Horizontal),
+            fontStyle = FontStyle.Italic,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+
+        val onError: () -> Unit = {
+            logcat(LogPriority.ERROR) { "Error getting links" }
+            scope.launchUI { context.toast("No available videos") }
+            EpisodeOptionsDialogScreen.onDismissDialog()
+        }
+        if (resultList?.isFailure == true) {
+            onError()
+        }
+
+        if (resultList == null || episode == null || anime == null || currentVideo == null) {
+            LoadingScreen()
+        } else {
+            val hosterStateList = resultList.getOrNull()
+            if (!hosterStateList.isNullOrEmpty()) {
+                VideoList(
+                    useExternalDownloader = useExternalDownloader,
+                    episode = episode,
+                    anime = anime,
+                    showAllQualities = showAllQualities,
+                    hosterStateList = hosterStateList,
+                    expandedList = expandedList,
+                    currentVideo = currentVideo,
+                    currentVideoSize = currentVideoSize,
+                    selectedHosterVideoIndex = selectedHosterVideoIndex,
+                    onShowAllQualities = onShowAllQualities,
+                    onClickHoster = onClickHoster,
+                    onClickVideo = onClickVideo,
+                    getHosterList = getHosterList,
+                )
+            } else {
+                onError()
+            }
+        }
+    }
+}
+
+@Composable
+private fun VideoList(
+    useExternalDownloader: Boolean,
+    episode: Episode,
+    anime: Anime,
+    showAllQualities: Boolean,
+    hosterStateList: List<HosterState>,
+    expandedList: List<Boolean>,
+    currentVideo: Video,
+    currentVideoSize: VideoSizeEstimator.Estimate?,
+    selectedHosterVideoIndex: Pair<Int, Int>,
+    onShowAllQualities: (Boolean) -> Unit,
+    onClickHoster: (Int) -> Unit,
+    onClickVideo: (Int, Int) -> Unit,
+    getHosterList: () -> List<Hoster>?,
+) {
+    val downloadManager = Injekt.get<AnimeDownloadManager>()
+    val clipboard = LocalClipboard.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val copiedString = stringResource(AYMR.strings.copied_video_link_to_clipboard)
+
+    AnimatedVisibility(
+        visible = !showAllQualities,
+        enter = slideInHorizontally(),
+        exit = slideOutHorizontally(),
+    ) {
+        Column {
+            if (currentVideo.videoUrl.isNotEmpty() && !showAllQualities) {
+                // Sizes for segmented streams are derived from duration and bitrate, so they are
+                // prefixed with "~" to avoid presenting an approximation as an exact number.
+                val sizeLabel = currentVideoSize?.let { estimate ->
+                    val prefix = if (estimate.exact) "" else "~"
+                    " · $prefix${estimate.bytes.toSize()}"
+                }.orEmpty()
+
+                ClickableRow(
+                    text = currentVideo.videoTitle + sizeLabel,
+                    icon = null,
+                    onClick = { onShowAllQualities(true) },
+                    showDropdownArrow = true,
+                )
+
+                val downloadEpisode: (Boolean) -> Unit = {
+                    downloadManager.downloadEpisodes(
+                        anime,
+                        listOf(episode),
+                        true,
+                        it,
+                        currentVideo,
+                    )
+                }
+
+                QualityOptions(
+                    onDownloadClicked = { downloadEpisode(useExternalDownloader) },
+                    onExtDownloadClicked = { downloadEpisode(!useExternalDownloader) },
+                    onCopyClicked = {
+                        scope.launch {
+                            clipboard.setClipEntry(
+                                ClipEntry(ClipData.newPlainText(null, currentVideo.videoUrl)),
+                            )
+                            context.toast(copiedString)
+                        }
+                    },
+                    onExtPlayerClicked = {
+                        scope.launch {
+                            MainActivity.startPlayerActivity(
+                                context,
+                                anime.id,
+                                episode.id,
+                                true,
+                                currentVideo,
+                            )
+                        }
+                    },
+                    onIntPlayerClicked = {
+                        scope.launch {
+                            MainActivity.startPlayerActivity(
+                                context,
+                                anime.id,
+                                episode.id,
+                                false,
+                                currentVideo,
+                                selectedHosterVideoIndex.first,
+                                selectedHosterVideoIndex.second,
+                                getHosterList(),
+                            )
+                        }
+                    },
+                )
+            }
+        }
+    }
+
+    AnimatedVisibility(
+        visible = showAllQualities,
+        enter = slideInHorizontally(initialOffsetX = { it / 2 }),
+        exit = slideOutHorizontally(targetOffsetX = { it / 2 }),
+    ) {
+        if (showAllQualities) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = TabbedDialogPaddings.Horizontal)
+                    .heightIn(max = 600.dp),
+            ) {
+                if (
+                    hosterStateList.size == 1 &&
+                    hosterStateList.first().name == Hoster.NO_HOSTER_LIST &&
+                    hosterStateList.first() is HosterState.Ready
+                ) {
+                    QualitySheetVideoContent(
+                        videoList = (hosterStateList.first() as HosterState.Ready).videoList,
+                        videoState = (hosterStateList.first() as HosterState.Ready).videoState,
+                        selectedVideoIndex = selectedHosterVideoIndex.second,
+                        onClickVideo = onClickVideo,
+                    )
+                } else {
+                    QualitySheetHosterContent(
+                        hosterState = hosterStateList,
+                        expandedState = expandedList,
+                        selectedVideoIndex = selectedHosterVideoIndex,
+                        onClickHoster = onClickHoster,
+                        onClickVideo = onClickVideo,
+                        displayHosters = Pair(false, false),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QualityOptions(
+    onDownloadClicked: () -> Unit = {},
+    onExtDownloadClicked: () -> Unit = {},
+    onCopyClicked: () -> Unit = {},
+    onExtPlayerClicked: () -> Unit = {},
+    onIntPlayerClicked: () -> Unit = {},
+) {
+    val closeMenu = { EpisodeOptionsDialogScreen.onDismissDialog() }
+
+    Column {
+        ClickableRow(
+            text = stringResource(MR.strings.copy),
+            icon = Icons.Outlined.ContentCopy,
+            onClick = { onCopyClicked() },
+        )
+
+        ClickableRow(
+            text = stringResource(AYMR.strings.action_start_download_internally),
+            icon = Icons.Outlined.Download,
+            onClick = {
+                onDownloadClicked()
+                closeMenu()
+            },
+        )
+
+        ClickableRow(
+            text = stringResource(AYMR.strings.action_start_download_externally),
+            icon = Icons.Outlined.SystemUpdateAlt,
+            onClick = {
+                onExtDownloadClicked()
+                closeMenu()
+            },
+        )
+
+        ClickableRow(
+            text = stringResource(AYMR.strings.action_play_externally),
+            icon = Icons.AutoMirrored.Outlined.OpenInNew,
+            onClick = {
+                onExtPlayerClicked()
+                closeMenu()
+            },
+        )
+
+        ClickableRow(
+            text = stringResource(AYMR.strings.action_play_internally),
+            icon = Icons.AutoMirrored.Outlined.Input,
+            onClick = {
+                onIntPlayerClicked()
+                closeMenu()
+            },
+        )
+    }
+}
+
+@Composable
+private fun ClickableRow(
+    text: String,
+    icon: ImageVector?,
+    onClick: () -> Unit,
+    showDropdownArrow: Boolean = false,
+) {
+    Row(
+        modifier = Modifier
+            .padding(horizontal = TabbedDialogPaddings.Horizontal)
+            .clickable(role = Role.DropdownList, onClick = onClick)
+            .fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        var textPadding = MaterialTheme.padding.medium
+
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+
+            Spacer(Modifier.width(MaterialTheme.padding.small))
+
+            textPadding = MaterialTheme.padding.small
+        }
+        Text(
+            text = text,
+            modifier = Modifier.padding(vertical = textPadding),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+
+        if (showDropdownArrow) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.NavigateNext,
+                contentDescription = null,
+                modifier = Modifier,
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}

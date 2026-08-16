@@ -1,0 +1,5 @@
+package mihon.domain.extensionstore.novel.repository
+
+import mihon.domain.extensionstore.repository.ExtensionStoreRepository
+
+interface NovelExtensionStoreRepository : ExtensionStoreRepository

@@ -1,0 +1,60 @@
+package eu.kanade.tachiyomi.ui.achievement
+
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import cafe.adriel.voyager.core.model.rememberScreenModel
+import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
+import cafe.adriel.voyager.navigator.tab.TabOptions
+import eu.kanade.presentation.achievement.screenmodel.AchievementScreenModel
+import eu.kanade.presentation.achievement.ui.AchievementScreen
+import eu.kanade.presentation.util.Tab
+import eu.kanade.tachiyomi.ui.main.MainActivity
+import tachiyomi.i18n.aniyomi.AYMR
+import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.presentation.core.util.collectAsStateWithLifecycle
+
+data object AchievementsTab : Tab {
+
+    override val options: TabOptions
+        @Composable
+        get() {
+            val isSelected = LocalTabNavigator.current.current.key == key
+            return TabOptions(
+                index = 9u,
+                title = stringResource(AYMR.strings.label_achievements),
+            )
+        }
+
+    @Composable
+    override fun Content() {
+        val context = LocalContext.current
+
+        val screenModel = rememberScreenModel { AchievementScreenModel() }
+        val state by screenModel.state.collectAsStateWithLifecycle()
+
+        AchievementScreen(
+            state = state,
+            onClickBack = { /* Handled by navigation */ },
+            onCategoryChanged = { category -> screenModel.onCategoryChanged(category) },
+            onAchievementClick = { achievement ->
+                screenModel.onAchievementClick(achievement)
+            },
+            onDialogDismiss = {
+                screenModel.onDialogDismiss()
+            },
+            onLocaleChanged = {
+                screenModel.refreshAchievements()
+            },
+            modifier = Modifier.fillMaxSize(),
+        )
+
+        LaunchedEffect(Unit) {
+            (context as? MainActivity)?.ready = true
+        }
+    }
+}

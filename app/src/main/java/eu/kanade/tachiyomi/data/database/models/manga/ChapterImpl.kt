@@ -1,0 +1,52 @@
+@file:Suppress("PropertyName")
+
+package eu.kanade.tachiyomi.data.database.models.manga
+
+class ChapterImpl : Chapter {
+
+    override var id: Long? = null
+
+    override var manga_id: Long? = null
+
+    override lateinit var url: String
+
+    override lateinit var name: String
+
+    override var scanlator: String? = null
+
+    override var read: Boolean = false
+
+    override var bookmark: Boolean = false
+
+    override var last_page_read: Long = 0
+
+    override var date_fetch: Long = 0
+
+    override var date_upload: Long = 0
+
+    override var chapter_number: Float = 0f
+
+    override var source_order: Int = 0
+
+    override var last_modified: Long = 0
+
+    override var version: Long = 0
+
+    // Real backing field: the SChapter interface default is a no-op setter that always reads back
+    // empty, and the reader hands this class straight to Source.getPageList - a 1.6 source reads
+    // its context (e.g. a rotating slug) out of this.
+    override var memo: kotlinx.serialization.json.JsonObject = kotlinx.serialization.json.JsonObject(emptyMap())
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other == null || javaClass != other.javaClass) return false
+
+        val chapter = other as Chapter
+        if (url != chapter.url) return false
+        return id == chapter.id
+    }
+
+    override fun hashCode(): Int {
+        return url.hashCode() + id.hashCode()
+    }
+}

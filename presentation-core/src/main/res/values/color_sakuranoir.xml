@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="sakuranoir_primary">#8F0050</color>
+    <color name="sakuranoir_onPrimary">#FFFFFF</color>
+    <color name="sakuranoir_primaryContainer">#FFCDE2</color>
+    <color name="sakuranoir_onPrimaryContainer">#38001E</color>
+    <color name="sakuranoir_secondary">#00854A</color>
+    <color name="sakuranoir_onSecondary">#FFFFFF</color>
+    <color name="sakuranoir_secondaryContainer">#8FF5BC</color>
+    <color name="sakuranoir_onSecondaryContainer">#003A15</color>
+    <color name="sakuranoir_tertiary">#9A86C9</color>
+    <color name="sakuranoir_onTertiary">#2A1040</color>
+    <color name="sakuranoir_tertiaryContainer">#E3D4F7</color>
+    <color name="sakuranoir_onTertiaryContainer">#3A1E58</color>
+    <color name="sakuranoir_background">#FFF8FA</color>
+    <color name="sakuranoir_onBackground">#261A22</color>
+    <color name="sakuranoir_surface">#FFF8FA</color>
+    <color name="sakuranoir_onSurface">#261A22</color>
+    <color name="sakuranoir_surfaceVariant">#F5DCE9</color>
+    <color name="sakuranoir_onSurfaceVariant">#55414E</color>
+    <color name="sakuranoir_outline">#8F7280</color>
+    <color name="sakuranoir_inverseOnSurface">#FFEAF2</color>
+    <color name="sakuranoir_inverseSurface">#3B2A33</color>
+    <color name="sakuranoir_primaryInverse">#AD1060</color>
+    <color name="sakuranoir_elevationOverlay">@color/sakuranoir_primary</color>
+</resources>

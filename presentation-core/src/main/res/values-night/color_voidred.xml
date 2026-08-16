@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="voidred_primary">#B0003C</color>
+    <color name="voidred_onPrimary">#FFFFFF</color>
+    <color name="voidred_primaryContainer">#57001F</color>
+    <color name="voidred_onPrimaryContainer">#FFD8E4</color>
+    <color name="voidred_secondary">#7A0026</color>
+    <color name="voidred_onSecondary">#FFFFFF</color>
+    <color name="voidred_secondaryContainer">#400014</color>
+    <color name="voidred_onSecondaryContainer">#FFD6E2</color>
+    <color name="voidred_tertiary">#E0407E</color>
+    <color name="voidred_onTertiary">#4A0028</color>
+    <color name="voidred_tertiaryContainer">#64003D</color>
+    <color name="voidred_onTertiaryContainer">#FFD6E8</color>
+    <color name="voidred_background">#050001</color>
+    <color name="voidred_onBackground">#F0E2E8</color>
+    <color name="voidred_surface">#0D0207</color>
+    <color name="voidred_onSurface">#F0E2E8</color>
+    <color name="voidred_surfaceVariant">#1F0D15</color>
+    <color name="voidred_onSurfaceVariant">#CCB4BE</color>
+    <color name="voidred_outline">#8F5C6E</color>
+    <color name="voidred_inverseOnSurface">#261119</color>
+    <color name="voidred_inverseSurface">#EDDEE4</color>
+    <color name="voidred_primaryInverse">#E0457E</color>
+    <color name="voidred_elevationOverlay">@color/voidred_primary</color>
+</resources>

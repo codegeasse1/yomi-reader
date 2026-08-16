@@ -1,0 +1,58 @@
+package eu.kanade.presentation.more.settings.screen
+
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
+import cafe.adriel.voyager.core.screen.Screen
+import cafe.adriel.voyager.navigator.LocalNavigator
+import cafe.adriel.voyager.navigator.currentOrThrow
+import dev.icerock.moko.resources.StringResource
+import eu.kanade.presentation.more.settings.Preference
+import eu.kanade.presentation.more.settings.PreferenceScaffold
+import eu.kanade.presentation.more.settings.rememberResolvedSettingsUiStyle
+import eu.kanade.presentation.util.LocalBackPress
+
+interface SearchableSettings : Screen {
+    @Composable
+    @ReadOnlyComposable
+    fun getTitleRes(): StringResource
+
+    @Composable
+    fun getPreferences(): List<Preference>
+
+    @Composable
+    fun RowScope.AppBarAction() {
+    }
+
+    @Composable
+    override fun Content() {
+        val handleBack = LocalBackPress.current
+        val navigator = LocalNavigator.currentOrThrow
+        val uiStyle = rememberResolvedSettingsUiStyle()
+        PreferenceScaffold(
+            titleRes = getTitleRes(),
+            uiStyle = uiStyle,
+            onBackPressed = resolveSearchableSettingsBackPress(
+                handleBack = handleBack,
+                navigatorPop = navigator::pop,
+            ),
+            actions = { AppBarAction() },
+            itemsProvider = { getPreferences() },
+        )
+    }
+
+    companion object {
+        // HACK: for the background blipping thingy.
+        // The title of the target PreferenceItem
+        // Set before showing the destination screen and reset after
+        // See BasePreferenceWidget.highlightBackground
+        var highlightKey: String? = null
+    }
+}
+
+internal fun resolveSearchableSettingsBackPress(
+    handleBack: (() -> Unit)?,
+    navigatorPop: () -> Unit,
+): () -> Unit {
+    return handleBack ?: navigatorPop
+}

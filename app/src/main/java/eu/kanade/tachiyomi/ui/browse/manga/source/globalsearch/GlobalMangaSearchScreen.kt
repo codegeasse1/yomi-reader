@@ -1,0 +1,123 @@
+package eu.kanade.tachiyomi.ui.browse.manga.source.globalsearch
+
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import cafe.adriel.voyager.core.model.rememberScreenModel
+import cafe.adriel.voyager.navigator.LocalNavigator
+import cafe.adriel.voyager.navigator.currentOrThrow
+import eu.kanade.core.util.ifMangaSourcesLoaded
+import eu.kanade.domain.ui.UiPreferences
+import eu.kanade.presentation.browse.isSecretHallQuery
+import eu.kanade.presentation.browse.manga.GlobalMangaSearchScreen
+import eu.kanade.presentation.browse.openSecretHallIfNeeded
+import eu.kanade.presentation.components.MeltdownInitiationHost
+import eu.kanade.presentation.util.Screen
+import eu.kanade.tachiyomi.ui.browse.manga.source.browse.BrowseMangaSourceScreen
+import eu.kanade.tachiyomi.ui.entries.manga.MangaScreen
+import tachiyomi.presentation.core.screens.LoadingScreen
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
+
+class GlobalMangaSearchScreen(
+    val searchQuery: String = "",
+    private val extensionFilter: String? = null,
+) : Screen() {
+
+    @Composable
+    override fun Content() {
+        if (!ifMangaSourcesLoaded()) {
+            LoadingScreen()
+            return
+        }
+
+        val navigator = LocalNavigator.currentOrThrow
+
+        if (isSecretHallQuery(searchQuery)) {
+            LaunchedEffect(searchQuery) {
+                openSecretHallIfNeeded(navigator, searchQuery)
+            }
+            LoadingScreen()
+            return
+        }
+
+        val screenModel = rememberScreenModel {
+            GlobalMangaSearchScreenModel(
+                initialQuery = searchQuery,
+                initialExtensionFilter = extensionFilter,
+            )
+        }
+        val state by screenModel.state.collectAsStateWithLifecycle()
+        var showSingleLoadingScreen by remember {
+            mutableStateOf(
+                searchQuery.isNotEmpty() && !extensionFilter.isNullOrEmpty() && state.total == 1,
+            )
+        }
+
+        // Шаг 1 пасхалки: триггер "third impact" / "третий удар".
+        val uiPreferences = remember { Injekt.get<UiPreferences>() }
+        var meltdownTriggered by remember { mutableStateOf(false) }
+
+        MeltdownInitiationHost(
+            triggered = meltdownTriggered,
+            onAcknowledged = {
+                meltdownTriggered = false
+                uiPreferences.meltdownStage().set(1)
+            },
+            onDismiss = {
+                meltdownTriggered = false
+            },
+        ) {
+            if (showSingleLoadingScreen) {
+                LoadingScreen()
+
+                LaunchedEffect(state.items) {
+                    when (val result = state.items.values.singleOrNull()) {
+                        MangaSearchItemResult.Loading -> return@LaunchedEffect
+                        is MangaSearchItemResult.Success -> {
+                            val manga = result.result.singleOrNull()
+                            if (manga != null) {
+                                navigator.replace(MangaScreen(manga.id, true))
+                            } else {
+                                // Backoff to result screen
+                                showSingleLoadingScreen = false
+                            }
+                        }
+                        else -> showSingleLoadingScreen = false
+                    }
+                }
+            } else {
+                androidx.compose.foundation.layout.Box(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
+                    GlobalMangaSearchScreen(
+                        state = state,
+                        navigateUp = navigator::pop,
+                        onChangeSearchQuery = screenModel::updateSearchQuery,
+                        onSearch = { enteredQuery ->
+                            val trimmed = enteredQuery.trim().lowercase()
+                            if (trimmed == "third impact" || trimmed == "третий удар") {
+                                meltdownTriggered = true
+                            }
+                            if (!openSecretHallIfNeeded(navigator, enteredQuery)) {
+                                screenModel.search()
+                            }
+                        },
+                        getManga = { screenModel.getManga(it) },
+                        onChangeSearchFilter = screenModel::setSourceFilter,
+                        onChangeLanguageFilter = screenModel::setLanguageFilter,
+                        onToggleResults = screenModel::toggleFilterResults,
+                        onClickSource = {
+                            navigator.push(BrowseMangaSourceScreen(it.id, state.searchQuery))
+                        },
+                        onClickItem = { navigator.push(MangaScreen(it.id, true)) },
+                        onLongClickItem = { navigator.push(MangaScreen(it.id, true)) },
+                    )
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,25 @@
+-- 1. Индексы для глав новелл и истории новелл
+CREATE INDEX IF NOT EXISTS novel_chapters_url_index ON novel_chapters(url);
+CREATE INDEX IF NOT EXISTS novel_history_last_read_index ON novel_history(last_read DESC);
+
+-- 2. Композитный индекс исключенных сканлейторов
+CREATE INDEX IF NOT EXISTS novel_excluded_scanlators_novel_id_scanlator_index ON novel_excluded_scanlators(novel_id, scanlator);
+
+-- 3. Удаление дублирующегося индекса history
+DROP INDEX IF EXISTS novel_history_chapter_id_index;
+
+-- 4. Индекс по дате добавления в любимое
+CREATE INDEX IF NOT EXISTS novels_favorite_modified_at_index ON novels(favorite_modified_at DESC);
+
+-- 5. Обновление триггера изменения favorite
+DROP TRIGGER IF EXISTS update_last_favorite_at_novels;
+
+CREATE TRIGGER update_last_favorite_at_novels
+AFTER UPDATE OF favorite ON novels
+FOR EACH ROW
+WHEN old.favorite != new.favorite
+BEGIN
+  UPDATE novels
+  SET favorite_modified_at = strftime('%s', 'now')
+  WHERE _id = new._id;
+END;

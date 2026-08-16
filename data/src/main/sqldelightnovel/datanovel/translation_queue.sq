@@ -1,0 +1,187 @@
+import kotlin.Boolean;
+import kotlin.Int;
+
+CREATE TABLE translation_queue(
+    _id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    chapter_id INTEGER NOT NULL UNIQUE,
+    novel_id INTEGER NOT NULL,
+    batch_token TEXT NOT NULL DEFAULT '',
+    batch_order INTEGER NOT NULL DEFAULT 0,
+    profile_snapshot_json TEXT,
+    status INTEGER NOT NULL DEFAULT 0,
+    progress INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL DEFAULT 0,
+    retry_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE translation_batch_state(
+    batch_token TEXT NOT NULL PRIMARY KEY,
+    novel_id INTEGER NOT NULL,
+    status INTEGER NOT NULL DEFAULT 0,
+    total INTEGER NOT NULL DEFAULT 0,
+    enqueued INTEGER NOT NULL DEFAULT 0,
+    skipped INTEGER NOT NULL DEFAULT 0,
+    completed INTEGER NOT NULL DEFAULT 0,
+    failed INTEGER NOT NULL DEFAULT 0,
+    last_successful_chapter_id INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX translation_queue_status_index ON translation_queue(status);
+CREATE INDEX translation_queue_chapter_id_index ON translation_queue(chapter_id);
+CREATE INDEX translation_queue_batch_token_index ON translation_queue(batch_token);
+CREATE INDEX translation_queue_batch_order_index ON translation_queue(batch_token, status, batch_order, created_at);
+
+-- Queries
+insert:
+INSERT INTO translation_queue(
+    chapter_id,
+    novel_id,
+    batch_token,
+    batch_order,
+    profile_snapshot_json,
+    status,
+    progress,
+    created_at,
+    updated_at,
+    retry_count
+)
+VALUES (
+    :chapterId,
+    :novelId,
+    :batchToken,
+    :batchOrder,
+    :profileSnapshotJson,
+    0,
+    0,
+    :createdAt,
+    :createdAt,
+    0
+)
+ON CONFLICT(chapter_id) DO UPDATE SET
+    novel_id = excluded.novel_id,
+    batch_token = excluded.batch_token,
+    batch_order = excluded.batch_order,
+    profile_snapshot_json = excluded.profile_snapshot_json,
+    status = 0,
+    progress = 0,
+    retry_count = 0,
+    error_message = NULL,
+    updated_at = excluded.updated_at;
+
+getByChapterId:
+SELECT * FROM translation_queue
+WHERE chapter_id = :chapterId;
+
+getByStatus:
+SELECT * FROM translation_queue
+WHERE status = :status;
+
+getPending:
+SELECT * FROM translation_queue
+WHERE status = 0
+ORDER BY created_at ASC, batch_order ASC, _id ASC;
+
+getInProgress:
+SELECT * FROM translation_queue
+WHERE status = 1;
+
+getNextPending:
+SELECT * FROM translation_queue
+WHERE status = 0
+ORDER BY created_at ASC, batch_order ASC, _id ASC
+LIMIT 1;
+
+deleteByBatchToken:
+DELETE FROM translation_queue
+WHERE batch_token = :batchToken;
+
+updateStatus:
+UPDATE translation_queue
+SET status = :status, updated_at = :updatedAt
+WHERE chapter_id = :chapterId;
+
+updateProgress:
+UPDATE translation_queue
+SET progress = :progress, updated_at = :updatedAt
+WHERE chapter_id = :chapterId;
+
+updateStatusAndProgress:
+UPDATE translation_queue
+SET status = :status, progress = :progress, updated_at = :updatedAt
+WHERE chapter_id = :chapterId;
+
+setError:
+UPDATE translation_queue
+SET status = 3, error_message = :error, updated_at = :updatedAt
+WHERE chapter_id = :chapterId;
+
+incrementRetry:
+UPDATE translation_queue
+SET retry_count = retry_count + 1, status = 0, updated_at = :updatedAt
+WHERE chapter_id = :chapterId;
+
+recoverInProgress:
+UPDATE translation_queue
+SET status = 0, progress = 0, error_message = NULL, updated_at = :updatedAt
+WHERE status = 1;
+
+delete:
+DELETE FROM translation_queue
+WHERE chapter_id = :chapterId;
+
+deleteCompleted:
+DELETE FROM translation_queue
+WHERE status = 2;
+
+upsertBatchState:
+INSERT INTO translation_batch_state(
+    batch_token,
+    novel_id,
+    status,
+    total,
+    enqueued,
+    skipped,
+    completed,
+    failed,
+    last_successful_chapter_id,
+    created_at,
+    updated_at
+)
+VALUES (
+    :batchToken,
+    :novelId,
+    :status,
+    :total,
+    :enqueued,
+    :skipped,
+    :completed,
+    :failed,
+    :lastSuccessfulChapterId,
+    :createdAt,
+    :updatedAt
+)
+ON CONFLICT(batch_token) DO UPDATE SET
+    novel_id = excluded.novel_id,
+    status = excluded.status,
+    total = excluded.total,
+    enqueued = excluded.enqueued,
+    skipped = excluded.skipped,
+    completed = excluded.completed,
+    failed = excluded.failed,
+    last_successful_chapter_id = excluded.last_successful_chapter_id,
+    updated_at = excluded.updated_at;
+
+getBatchState:
+SELECT * FROM translation_batch_state
+WHERE batch_token = :batchToken;
+
+deleteBatchState:
+DELETE FROM translation_batch_state
+WHERE batch_token = :batchToken;
+
+deleteAllBatchStates:
+DELETE FROM translation_batch_state;

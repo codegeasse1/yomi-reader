@@ -1,0 +1,45 @@
+package eu.kanade.tachiyomi.ui.reader.novel.translation
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+
+internal data class GoogleSelectedTextTranslationParsedPayload(
+    val translations: List<String>,
+    val detectedSourceLanguage: String? = null,
+)
+
+internal object GoogleSelectedTextTranslationParser {
+
+    fun parse(
+        rawBody: String,
+        json: Json,
+    ): GoogleSelectedTextTranslationParsedPayload? {
+        val payload = runCatching {
+            json.parseToJsonElement(rawBody.trim())
+        }.getOrNull() as? JsonArray ?: return null
+
+        val translationBlocks = payload.getOrNull(0).asArrayOrNull() ?: return null
+
+        val translations = translationBlocks
+            .mapNotNull { element ->
+                element.asArrayOrNull()
+                    ?.firstOrNull()
+                    .asStringOrNull()
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+            }
+            .takeIf { it.isNotEmpty() }
+            ?: return null
+
+        val detectedSourceLanguage = payload
+            .getOrNull(2)
+            .asStringOrNull()
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+
+        return GoogleSelectedTextTranslationParsedPayload(
+            translations = translations,
+            detectedSourceLanguage = detectedSourceLanguage,
+        )
+    }
+}

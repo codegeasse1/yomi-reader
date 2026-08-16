@@ -1,0 +1,109 @@
+package eu.kanade.tachiyomi.data.suggestions.novel
+
+import eu.kanade.domain.entries.novel.model.toSNovel
+import eu.kanade.tachiyomi.data.suggestions.SuggestionCache
+import eu.kanade.tachiyomi.data.suggestions.SuggestionItem
+import eu.kanade.tachiyomi.data.suggestions.SuggestionReason
+import eu.kanade.tachiyomi.data.suggestions.SuggestionSeed
+import eu.kanade.tachiyomi.data.suggestions.sources.SuggestionMediaType
+import eu.kanade.tachiyomi.data.suggestions.util.ExtensionInterop
+import eu.kanade.tachiyomi.novelsource.NovelCatalogueSource
+import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.entries.novel.model.Novel
+import java.util.concurrent.atomic.AtomicInteger
+
+class NovelRelatedSuggestionCoordinator {
+
+    private companion object {
+        const val TAG = "NovelRelatedSuggestionCoordinator"
+
+        /** Max extra detail requests per fetch, used only to backfill missing thumbnails. */
+        const val MAX_THUMBNAIL_DETAIL_LOOKUPS = 6
+    }
+
+    suspend fun fetchRelatedSuggestions(
+        novel: Novel,
+        source: NovelCatalogueSource,
+        seed: SuggestionSeed,
+        maxResults: Int = 20,
+    ): NovelFallbackOutcome {
+        val cacheKey = SuggestionCache.makeKey(
+            "related:${source.id}:limit:$maxResults",
+            novel.url,
+            "NOVEL",
+            seed.candidateTitles,
+        )
+
+        if (!source.supportsRelatedNovels) {
+            logcat { "[NovelRelatedSuggestionCoordinator] Source ${source.name} does not support related novels" }
+            SuggestionCache.put(cacheKey, emptyList())
+            return NovelFallbackOutcome.Empty(NovelFallbackReason.NO_RELATED_SUPPORT)
+        }
+
+        val cached = SuggestionCache.get(cacheKey)
+        if (cached != null) {
+            logcat { "[NovelRelatedSuggestionCoordinator] Cache HIT for key $cacheKey, count=${cached.size}" }
+            return if (cached.isEmpty()) {
+                NovelFallbackOutcome.Empty(NovelFallbackReason.RELATED_EMPTY)
+            } else {
+                NovelFallbackOutcome.Success(cached)
+            }
+        }
+
+        logcat {
+            "[NovelRelatedSuggestionCoordinator] Cache MISS. Fetching related novels from source for '${novel.title}'"
+        }
+        return try {
+            val relatedNovels = source.getRelatedNovels(novel.toSNovel())
+            if (relatedNovels.isEmpty()) {
+                logcat { "[NovelRelatedSuggestionCoordinator] Source returned empty related list for '${novel.title}'" }
+                SuggestionCache.put(cacheKey, emptyList())
+                NovelFallbackOutcome.Empty(NovelFallbackReason.RELATED_EMPTY)
+            } else {
+                val thumbnailDetailBudget = AtomicInteger(MAX_THUMBNAIL_DETAIL_LOOKUPS)
+                // take() BEFORE map(): the previous order resolved thumbnails
+                // (potentially one details request each) for the entire related
+                // list only to throw most of it away afterwards.
+                val items = relatedNovels
+                    .distinctBy { it.url }
+                    .take(maxResults)
+                    .map { sNovel ->
+                        SuggestionItem(
+                            title = sNovel.title,
+                            searchQueries = listOf(sNovel.title),
+                            thumbnailUrl = resolveThumbnail(source, sNovel, thumbnailDetailBudget),
+                            providerName = source.name,
+                            providerUrl = sNovel.url,
+                            providerId = "${source.id}:${sNovel.url}",
+                            mediaType = SuggestionMediaType.NOVEL,
+                            reason = SuggestionReason.RELATED,
+                        )
+                    }
+
+                logcat { "[NovelRelatedSuggestionCoordinator] Successfully loaded ${items.size} related novels" }
+                SuggestionCache.put(cacheKey, items)
+                NovelFallbackOutcome.Success(items)
+            }
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: LinkageError) {
+            logcat { "[NovelRelatedSuggestionCoordinator] Incompatible extension ABI: ${e.message}" }
+            NovelFallbackOutcome.Empty(NovelFallbackReason.RELATED_EMPTY)
+        } catch (e: Exception) {
+            logcat { "[NovelRelatedSuggestionCoordinator] Failed to fetch related novels: ${e.message}" }
+            NovelFallbackOutcome.Empty(NovelFallbackReason.RELATED_EMPTY)
+        }
+    }
+
+    private suspend fun resolveThumbnail(
+        source: NovelCatalogueSource,
+        novel: eu.kanade.tachiyomi.novelsource.model.SNovel,
+        detailBudget: AtomicInteger,
+    ): String? {
+        novel.thumbnail_url?.takeIf { it.isNotBlank() }?.let { return it }
+        if (detailBudget.getAndDecrement() <= 0) return null
+        return ExtensionInterop.runInterop(TAG, "getNovelDetails(thumbnail)") {
+            source.getNovelDetails(novel.copy()).thumbnail_url?.takeIf { it.isNotBlank() }
+        }
+    }
+}

@@ -1,0 +1,46 @@
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/sc_home_48dp"
+        android:shortcutDisabledMessage="@string/app_not_available"
+        android:shortcutId="show_home"
+        android:shortcutLongLabel="@string/aurora_home"
+        android:shortcutShortLabel="@string/aurora_home">
+        <intent
+            android:action="eu.kanade.tachiyomi.SHOW_HOME"
+            android:targetClass="eu.kanade.tachiyomi.ui.main.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/sc_collections_baseline_48dp"
+        android:shortcutDisabledMessage="@string/app_not_available"
+        android:shortcutId="show_titles"
+        android:shortcutLongLabel="@string/label_titles"
+        android:shortcutShortLabel="@string/label_titles">
+        <intent
+            android:action="eu.kanade.tachiyomi.SHOW_ANIMELIB"
+            android:targetClass="eu.kanade.tachiyomi.ui.main.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/sc_new_releases_48dp"
+        android:shortcutDisabledMessage="@string/app_not_available"
+        android:shortcutId="show_updates"
+        android:shortcutLongLabel="@string/aurora_updates"
+        android:shortcutShortLabel="@string/aurora_updates">
+        <intent
+            android:action="eu.kanade.tachiyomi.SHOW_RECENTLY_UPDATED"
+            android:targetClass="eu.kanade.tachiyomi.ui.main.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/sc_explore_48dp"
+        android:shortcutDisabledMessage="@string/app_not_available"
+        android:shortcutId="show_browse"
+        android:shortcutLongLabel="@string/aurora_browse"
+        android:shortcutShortLabel="@string/aurora_browse">
+        <intent
+            android:action="eu.kanade.tachiyomi.SHOW_CATALOGUES"
+            android:targetClass="eu.kanade.tachiyomi.ui.main.MainActivity" />
+    </shortcut>
+</shortcuts>

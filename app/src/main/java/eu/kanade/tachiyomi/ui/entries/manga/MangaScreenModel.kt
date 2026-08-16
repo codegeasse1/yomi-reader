@@ -1,0 +1,2125 @@
+package eu.kanade.tachiyomi.ui.entries.manga
+
+import android.content.Context
+import android.util.Log
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.util.fastAny
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.flowWithLifecycle
+import cafe.adriel.voyager.core.model.StateScreenModel
+import cafe.adriel.voyager.core.model.screenModelScope
+import eu.kanade.core.preference.asState
+import eu.kanade.core.util.addOrRemove
+import eu.kanade.core.util.insertSeparators
+import eu.kanade.domain.base.BasePreferences
+import eu.kanade.domain.entries.manga.interactor.GetExcludedScanlators
+import eu.kanade.domain.entries.manga.interactor.SetExcludedScanlators
+import eu.kanade.domain.entries.manga.interactor.SourceMangaRatingFetcher
+import eu.kanade.domain.entries.manga.interactor.UpdateManga
+import eu.kanade.domain.entries.manga.model.chaptersFiltered
+import eu.kanade.domain.entries.manga.model.effectiveDownloadedFilter
+import eu.kanade.domain.entries.manga.model.toSManga
+import eu.kanade.domain.entries.manga.model.toSMangaUpdateRequest
+import eu.kanade.domain.entries.metadata.FetchEntryMetadataFromTracker
+import eu.kanade.domain.entries.metadata.TrackerMetadataFetchOutcome
+import eu.kanade.domain.items.chapter.interactor.GetAvailableScanlators
+import eu.kanade.domain.items.chapter.interactor.GetScanlatorChapterCounts
+import eu.kanade.domain.items.chapter.interactor.SetReadStatus
+import eu.kanade.domain.items.chapter.interactor.SyncChaptersWithSource
+import eu.kanade.domain.metadata.interactor.GetMangaMetadata
+import eu.kanade.domain.metadata.model.MetadataLoadError
+import eu.kanade.domain.source.service.SourcePreferences
+import eu.kanade.domain.track.manga.interactor.AddMangaTracks
+import eu.kanade.domain.track.manga.interactor.RefreshMangaTracks
+import eu.kanade.domain.track.manga.interactor.TrackChapter
+import eu.kanade.domain.track.model.AutoTrackState
+import eu.kanade.domain.track.service.TrackPreferences
+import eu.kanade.presentation.entries.DownloadAction
+import eu.kanade.presentation.entries.manga.components.ChapterDownloadAction
+import eu.kanade.presentation.series.manga.mangaChapterResumeComparator
+import eu.kanade.presentation.series.manga.resolveMangaResumeChapterFromSorted
+import eu.kanade.presentation.util.TargetChapterCalculator
+import eu.kanade.presentation.util.formattedMessage
+import eu.kanade.tachiyomi.data.download.manga.MangaDownloadCache
+import eu.kanade.tachiyomi.data.download.manga.MangaDownloadManager
+import eu.kanade.tachiyomi.data.download.manga.model.MangaDownload
+import eu.kanade.tachiyomi.data.suggestions.SuggestionCoordinator
+import eu.kanade.tachiyomi.data.suggestions.SuggestionItem
+import eu.kanade.tachiyomi.data.suggestions.SuggestionSeed
+import eu.kanade.tachiyomi.data.suggestions.SuggestionSourceWeight
+import eu.kanade.tachiyomi.data.suggestions.SuggestionState
+import eu.kanade.tachiyomi.data.suggestions.SuggestionTitleResolver
+import eu.kanade.tachiyomi.data.suggestions.manga.MangaFallbackOutcome
+import eu.kanade.tachiyomi.data.suggestions.manga.MangaSearchFallbackEngine
+import eu.kanade.tachiyomi.data.suggestions.sources.SuggestionMediaType
+import eu.kanade.tachiyomi.data.suggestions.util.bestMatchScoreFor
+import eu.kanade.tachiyomi.data.suggestions.util.dedupeByCleanTitle
+import eu.kanade.tachiyomi.data.track.EnhancedMangaTracker
+import eu.kanade.tachiyomi.data.track.TrackerManager
+import eu.kanade.tachiyomi.network.HttpException
+import eu.kanade.tachiyomi.source.CatalogueSource
+import eu.kanade.tachiyomi.source.ConfigurableSource
+import eu.kanade.tachiyomi.source.MangaSource
+import eu.kanade.tachiyomi.source.model.SManga
+import eu.kanade.tachiyomi.source.model.SMangaUpdate
+import eu.kanade.tachiyomi.ui.entries.mergeNewItemIds
+import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
+import eu.kanade.tachiyomi.util.TtlCache
+import eu.kanade.tachiyomi.util.chapter.getNextUnread
+import eu.kanade.tachiyomi.util.manga.MangaMemoRepairHelper
+import eu.kanade.tachiyomi.util.removeCovers
+import eu.kanade.tachiyomi.util.system.toast
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
+import logcat.LogPriority
+import mihon.domain.items.chapter.interactor.FilterChaptersForDownload
+import tachiyomi.core.common.i18n.stringResource
+import tachiyomi.core.common.preference.CheckboxState
+import tachiyomi.core.common.preference.TriState
+import tachiyomi.core.common.preference.mapAsCheckboxState
+import tachiyomi.core.common.util.lang.launchIO
+import tachiyomi.core.common.util.lang.launchNonCancellable
+import tachiyomi.core.common.util.lang.withIOContext
+import tachiyomi.core.common.util.lang.withUIContext
+import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.category.manga.interactor.GetMangaCategories
+import tachiyomi.domain.category.manga.interactor.SetMangaCategories
+import tachiyomi.domain.category.model.Category
+import tachiyomi.domain.entries.applyFilter
+import tachiyomi.domain.entries.manga.interactor.GetDuplicateLibraryManga
+import tachiyomi.domain.entries.manga.interactor.GetMangaWithChapters
+import tachiyomi.domain.entries.manga.interactor.SetMangaChapterFlags
+import tachiyomi.domain.entries.manga.model.Manga
+import tachiyomi.domain.entries.manga.repository.MangaRepository
+import tachiyomi.domain.history.manga.repository.MangaHistoryRepository
+import tachiyomi.domain.items.chapter.interactor.SetMangaDefaultChapterFlags
+import tachiyomi.domain.items.chapter.interactor.UpdateChapter
+import tachiyomi.domain.items.chapter.model.Chapter
+import tachiyomi.domain.items.chapter.model.ChapterUpdate
+import tachiyomi.domain.items.chapter.model.NoChaptersException
+import tachiyomi.domain.items.chapter.service.calculateChapterGap
+import tachiyomi.domain.items.chapter.service.getChapterSort
+import tachiyomi.domain.library.service.LibraryPreferences
+import tachiyomi.domain.metadata.model.ExternalMetadata
+import tachiyomi.domain.metadata.model.MetadataSource
+import tachiyomi.domain.source.manga.service.MangaSourceManager
+import tachiyomi.domain.track.manga.interactor.GetMangaTracks
+import tachiyomi.i18n.MR
+import tachiyomi.i18n.aniyomi.AYMR
+import tachiyomi.source.local.entries.manga.isLocal
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
+import kotlin.math.floor
+
+class MangaScreenModel(
+    private val context: Context,
+    private val lifecycle: Lifecycle,
+    private val mangaId: Long,
+    private val isFromSource: Boolean,
+    private val basePreferences: BasePreferences = Injekt.get(),
+    private val uiPreferences: eu.kanade.domain.ui.UiPreferences = Injekt.get(),
+    private val libraryPreferences: LibraryPreferences = Injekt.get(),
+    private val trackPreferences: TrackPreferences = Injekt.get(),
+    readerPreferences: ReaderPreferences = Injekt.get(),
+    private val trackerManager: TrackerManager = Injekt.get(),
+    private val trackChapter: TrackChapter = Injekt.get(),
+    private val downloadManager: MangaDownloadManager = Injekt.get(),
+    private val downloadCache: MangaDownloadCache = Injekt.get(),
+    private val getMangaAndChapters: GetMangaWithChapters = Injekt.get(),
+    private val getDuplicateLibraryManga: GetDuplicateLibraryManga = Injekt.get(),
+    private val getAvailableScanlators: GetAvailableScanlators = Injekt.get(),
+    private val getScanlatorChapterCounts: GetScanlatorChapterCounts = Injekt.get(),
+    private val getExcludedScanlators: GetExcludedScanlators = Injekt.get(),
+    private val setExcludedScanlators: SetExcludedScanlators = Injekt.get(),
+    private val setMangaChapterFlags: SetMangaChapterFlags = Injekt.get(),
+    private val setMangaDefaultChapterFlags: SetMangaDefaultChapterFlags = Injekt.get(),
+    private val setReadStatus: SetReadStatus = Injekt.get(),
+    private val updateChapter: UpdateChapter = Injekt.get(),
+    private val updateManga: UpdateManga = Injekt.get(),
+    private val syncChaptersWithSource: SyncChaptersWithSource = Injekt.get(),
+    private val getCategories: GetMangaCategories = Injekt.get(),
+    private val getTracks: GetMangaTracks = Injekt.get(),
+    private val addTracks: AddMangaTracks = Injekt.get(),
+    private val setMangaCategories: SetMangaCategories = Injekt.get(),
+    private val mangaRepository: MangaRepository = Injekt.get(),
+    private val mangaHistoryRepository: MangaHistoryRepository = Injekt.get(),
+    private val filterChaptersForDownload: FilterChaptersForDownload = Injekt.get(),
+    private val getMangaMetadata: GetMangaMetadata = Injekt.get(),
+    private val fetchEntryMetadataFromTracker: FetchEntryMetadataFromTracker = Injekt.get(),
+    private val sourceMangaRatingFetcher: SourceMangaRatingFetcher = Injekt.get(),
+    private val suggestionCoordinator: SuggestionCoordinator = Injekt.get(),
+    private val sourcePreferences: SourcePreferences = Injekt.get(),
+    val snackbarHostState: SnackbarHostState = SnackbarHostState(),
+) : StateScreenModel<MangaScreenModel.State>(State.Loading) {
+
+    private val searchFallbackEngine = MangaSearchFallbackEngine()
+
+    private val successState: State.Success?
+        get() = state.value as? State.Success
+
+    val manga: Manga?
+        get() = successState?.manga
+
+    val source: MangaSource?
+        get() = successState?.source
+
+    private val isFavorited: Boolean
+        get() = manga?.favorite ?: false
+
+    private val allChapters: List<ChapterList.Item>?
+        get() = successState?.chapters
+
+    private val filteredChapters: List<ChapterList.Item>?
+        get() = successState?.processedChapters
+
+    val chapterSwipeStartAction = libraryPreferences.swipeChapterEndAction().get()
+    val chapterSwipeEndAction = libraryPreferences.swipeChapterStartAction().get()
+    var autoTrackState = trackPreferences.autoUpdateTrackOnMarkRead().get()
+
+    private val skipFiltered by readerPreferences.skipFiltered().asState(screenModelScope)
+
+    val isUpdateIntervalEnabled =
+        LibraryPreferences.ENTRY_OUTSIDE_RELEASE_PERIOD in libraryPreferences.autoUpdateItemRestrictions().get()
+
+    private val selectedPositions: Array<Int> = arrayOf(-1, -1) // first and last selected index in list
+    private val selectedChapterIds: HashSet<Long> = HashSet()
+
+    internal var isFromChangeCategory: Boolean = false
+
+    internal val autoOpenTrack: Boolean
+        get() = successState?.trackingAvailable == true && trackPreferences.trackOnAddingToLibrary().get()
+
+    /**
+     * Helper function to update the UI state only if it's currently in success state
+     */
+    private fun buildSuggestionSeed(manga: Manga, metadata: ExternalMetadata?): SuggestionSeed {
+        val title = manga.title
+        val metadataTitles = if (metadata != null &&
+            metadata.searchQuery.isNotBlank() &&
+            !metadata.searchQuery.startsWith("tracking:", ignoreCase = true)
+        ) {
+            listOf(metadata.searchQuery)
+        } else {
+            emptyList()
+        }
+        val candidates = eu.kanade.tachiyomi.data.suggestions.SuggestionTitleResolver.resolveCandidates(
+            title = title,
+            description = manga.description,
+            url = manga.url,
+            metadataAlternativeTitles = metadataTitles,
+        )
+        return SuggestionSeed(
+            mediaType = SuggestionMediaType.MANGA,
+            primaryTitle = title,
+            candidateTitles = candidates,
+            description = manga.description,
+            author = manga.author,
+            genres = manga.genre,
+        )
+    }
+
+    private fun Manga.toCatalogueSource(): CatalogueSource? =
+        Injekt.get<tachiyomi.domain.source.manga.service.MangaSourceManager>().getOrStub(source) as? CatalogueSource
+
+    private var suggestionSeedUsed: SuggestionSeed? = null
+
+    fun getSuggestionSeed(): SuggestionSeed? = suggestionSeedUsed
+
+    fun retrySuggestions() {
+        val success = successState ?: return
+        val seed = buildSuggestionSeed(success.manga, success.mangaMetadata)
+        eu.kanade.tachiyomi.data.suggestions.SuggestionCache.invalidateForSeed(seed, success.manga.url)
+        loadSuggestions(
+            seed,
+            manga = success.manga,
+            source = success.manga.toCatalogueSource(),
+            force = true,
+        )
+    }
+
+    private fun emitProgressiveSuggestions(list: List<SuggestionItem>, currentManga: Manga?) {
+        val seed = suggestionSeedUsed ?: return
+        val sorted = synchronized(list) {
+            list.dedupeByCleanTitle(seed)
+                .filter { item ->
+                    val isSelf = SuggestionTitleResolver.isSameProviderEntry(item, currentManga?.url)
+                    val isFranchise = SuggestionTitleResolver.isFranchiseDuplicate(item.title, seed.primaryTitle)
+                    !isSelf && !isFranchise
+                }
+                .sortedByDescending { SuggestionSourceWeight.finalScore(it.reason, it.bestMatchScoreFor(seed)) }
+                .take(20)
+        }
+        if (sorted.isNotEmpty()) {
+            updateSuccessState { it.copy(suggestions = SuggestionState.Success(sorted)) }
+        }
+    }
+
+    private var suggestionsJob: Job? = null
+
+    private fun loadSuggestions(
+        seed: SuggestionSeed,
+        manga: Manga? = null,
+        source: CatalogueSource? = null,
+        force: Boolean = false,
+    ) {
+        if (!sourcePreferences.entrySuggestionsEnabled().get()) {
+            updateSuccessState { it.copy(suggestions = SuggestionState.Disabled) }
+            return
+        }
+        if (!force && suggestionSeedUsed == seed) {
+            return
+        }
+        suggestionSeedUsed = seed
+
+        val currentManga = manga ?: successState?.manga
+        val currentSource = source ?: (
+            currentManga?.let {
+                Injekt.get<tachiyomi.domain.source.manga.service.MangaSourceManager>().getOrStub(it.source)
+            } as? CatalogueSource
+            )
+
+        suggestionsJob?.cancel()
+        suggestionsJob = screenModelScope.launchIO {
+            updateSuccessState { it.copy(suggestions = SuggestionState.Loading) }
+            try {
+                val suggestionsList = java.util.Collections.synchronizedList(mutableListOf<SuggestionItem>())
+
+                coroutineScope {
+                    // Task 1: External Suggestions (AniList/etc)
+                    launch {
+                        try {
+                            val externalResult = suggestionCoordinator.fetchSuggestions(seed, limit = 40)
+                            if (externalResult.items.isNotEmpty()) {
+                                val externalFiltered = externalResult.items.filter { item ->
+                                    val isSelf = SuggestionTitleResolver.isSameProviderEntry(item, currentManga?.url)
+                                    val isFranchise = eu.kanade.tachiyomi.data.suggestions
+                                        .SuggestionTitleResolver.isFranchiseDuplicate(
+                                            item.title,
+                                            seed.primaryTitle,
+                                        )
+                                    !isSelf && !isFranchise
+                                }
+                                if (externalFiltered.isNotEmpty()) {
+                                    synchronized(suggestionsList) {
+                                        suggestionsList.addAll(externalFiltered)
+                                    }
+                                    emitProgressiveSuggestions(suggestionsList, currentManga)
+                                }
+                            }
+                        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                            throw e
+                        } catch (e: LinkageError) {
+                            logcat {
+                                "[MangaScreenModel] External suggestions failed (incompatible extension): ${e.message}"
+                            }
+                        } catch (e: Exception) {
+                            logcat { "[MangaScreenModel] External suggestions failed: ${e.message}" }
+                        }
+                    }
+
+                    // Task 2: Search Fallback suggestions
+                    if (currentManga != null && currentSource != null) {
+                        launch {
+                            try {
+                                val outcome = searchFallbackEngine.fetchSearchFallback(
+                                    manga = currentManga,
+                                    source = currentSource,
+                                    seed = seed,
+                                    maxResults = 40,
+                                    onProgress = { progressItems ->
+                                        synchronized(suggestionsList) {
+                                            val existingUrls = suggestionsList.map { it.providerUrl }.toSet()
+                                            val newItems = progressItems.filter { it.providerUrl !in existingUrls }
+                                            suggestionsList.addAll(newItems)
+                                        }
+                                        emitProgressiveSuggestions(suggestionsList, currentManga)
+                                    },
+                                )
+                                if (outcome is MangaFallbackOutcome.Success && outcome.items.isNotEmpty()) {
+                                    synchronized(suggestionsList) {
+                                        val existingUrls = suggestionsList.map { it.providerUrl }.toSet()
+                                        val newItems = outcome.items.filter { it.providerUrl !in existingUrls }
+                                        suggestionsList.addAll(newItems)
+                                    }
+                                    emitProgressiveSuggestions(suggestionsList, currentManga)
+                                }
+                            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                                throw e
+                            } catch (e: LinkageError) {
+                                logcat {
+                                    "[MangaScreenModel] Native search fallback failed (incompatible extension): ${e.message}"
+                                }
+                            } catch (e: Exception) {
+                                logcat { "[MangaScreenModel] Native search fallback failed: ${e.message}" }
+                            }
+                        }
+                    }
+                }
+
+                val finalCombined = synchronized(suggestionsList) {
+                    suggestionsList.dedupeByCleanTitle(seed)
+                        .filter { item ->
+                            val isSelf = SuggestionTitleResolver.isSameProviderEntry(item, currentManga?.url)
+                            val isFranchise = eu.kanade.tachiyomi.data.suggestions
+                                .SuggestionTitleResolver.isFranchiseDuplicate(
+                                    item.title,
+                                    seed.primaryTitle,
+                                )
+                            !isSelf && !isFranchise
+                        }
+                        .sortedByDescending { SuggestionSourceWeight.finalScore(it.reason, it.bestMatchScoreFor(seed)) }
+                        .take(20)
+                }
+
+                updateSuccessState {
+                    val nextState = when {
+                        finalCombined.isEmpty() -> SuggestionState.Empty()
+                        else -> SuggestionState.Success(finalCombined)
+                    }
+                    it.copy(suggestions = nextState)
+                }
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
+            } catch (e: LinkageError) {
+                logcat { "MangaScreenModel suggestions fetch failed (incompatible extension): ${e.message}" }
+                updateSuccessState {
+                    it.copy(suggestions = SuggestionState.Error(e.message ?: "Incompatible extension"))
+                }
+            } catch (e: Exception) {
+                logcat { "MangaScreenModel suggestions fetch failed: ${e.message}" }
+                updateSuccessState { it.copy(suggestions = SuggestionState.Error(e.message ?: "Unknown error")) }
+            }
+        }
+    }
+
+    private inline fun updateSuccessState(func: (State.Success) -> State.Success) {
+        mutableState.update {
+            when (it) {
+                State.Loading -> it
+                is State.Success -> func(it)
+            }
+        }
+    }
+
+    init {
+        screenModelScope.launchIO {
+            combine(
+                getMangaAndChapters.subscribe(mangaId, applyScanlatorFilter = true).distinctUntilChanged(),
+                downloadCache.changes,
+                downloadManager.queueState,
+            ) { mangaAndChapters, _, _ -> mangaAndChapters }
+                .flowWithLifecycle(lifecycle)
+                .collectLatest { (manga, chapters) ->
+                    val previousManga = successState?.manga
+                    val metadataChanged = previousManga == null ||
+                        previousManga.initialized != manga.initialized ||
+                        previousManga.author != manga.author ||
+                        previousManga.genre != manga.genre
+
+                    updateSuccessState {
+                        it.copy(
+                            manga = manga,
+                            chapters = chapters.toChapterListItems(manga),
+                            chapterSourcePreview = null, // real persisted data arrived, clear preview
+                        )
+                    }
+                    if (metadataChanged) {
+                        loadSuggestions(
+                            buildSuggestionSeed(manga, successState?.mangaMetadata),
+                            manga = manga,
+                            source = manga.toCatalogueSource(),
+                        )
+                    }
+                }
+        }
+
+        screenModelScope.launchIO {
+            getExcludedScanlators.subscribe(mangaId)
+                .flowWithLifecycle(lifecycle)
+                .distinctUntilChanged()
+                .collectLatest { excludedScanlators ->
+                    updateSuccessState {
+                        it.copy(excludedScanlators = excludedScanlators)
+                    }
+                }
+        }
+
+        screenModelScope.launchIO {
+            getAvailableScanlators.subscribe(mangaId)
+                .flowWithLifecycle(lifecycle)
+                .distinctUntilChanged()
+                .collectLatest { availableScanlators ->
+                    updateSuccessState {
+                        it.copy(availableScanlators = availableScanlators)
+                    }
+                }
+        }
+
+        screenModelScope.launchIO {
+            getScanlatorChapterCounts.subscribe(mangaId)
+                .flowWithLifecycle(lifecycle)
+                .distinctUntilChanged()
+                .collectLatest { scanlatorChapterCounts ->
+                    updateSuccessState {
+                        it.copy(scanlatorChapterCounts = scanlatorChapterCounts)
+                    }
+                }
+        }
+
+        observeDownloads()
+
+        screenModelScope.launchIO {
+            val manga = getMangaAndChapters.awaitManga(mangaId)
+
+            if (shouldApplyDefaultChapterFlags(manga)) {
+                setMangaDefaultChapterFlags.await(manga)
+            }
+
+            val source = Injekt.get<MangaSourceManager>().getOrStub(manga.source)
+            val rawChapters = getMangaAndChapters.awaitChapters(mangaId, applyScanlatorFilter = true)
+            val start = System.currentTimeMillis()
+            // Cheap path for Aurora: list visible immediately. Real download states via observeDownloads + hydrate.
+            val chapters = rawChapters.toChapterListItemsCheap(manga)
+            val loadMs = System.currentTimeMillis() - start
+            logcat(LogPriority.DEBUG) {
+                "TADAMI_PERF_MANGA_TITLE db-loaded+items id=$mangaId chapters=${chapters.size} took=${loadMs}ms (cheap-initial)"
+            }
+
+            val needRefreshInfo = !manga.initialized || isFromSource
+            val needRefreshChapter = chapters.isEmpty()
+            val metadataSource = uiPreferences.metadataSource().get()
+            val willLoadMetadata = metadataSource != MetadataSource.NONE
+            val cachedMetadata = getMangaMetadata.getCached(mangaId)
+            val hasCachedMetadata = cachedMetadata != null && !cachedMetadata.isStale()
+
+            // Show what we have earlier
+            mutableState.update {
+                State.Success(
+                    manga = manga,
+                    source = source,
+                    isFromSource = isFromSource,
+                    chapters = chapters,
+                    availableScanlators = emptySet(),
+                    scanlatorChapterCounts = emptyMap(),
+                    excludedScanlators = emptySet(),
+                    downloadedOnly = basePreferences.downloadedOnly().get(),
+                    isRefreshingData = needRefreshInfo || needRefreshChapter,
+                    dialog = null,
+                    isMetadataLoading = willLoadMetadata && !hasCachedMetadata,
+                    mangaMetadata = cachedMetadata,
+                    suggestions = if (sourcePreferences.entrySuggestionsEnabled().get()) {
+                        SuggestionState.Loading
+                    } else {
+                        SuggestionState.Disabled
+                    },
+                )
+            }
+
+            // Hydrate real download states asynchronously so Aurora sees chapters list immediately (cheap path).
+            // Individual updates continue to come via observeDownloads().
+            screenModelScope.launchIO {
+                val hydrated = rawChapters.toChapterListItems(manga)
+                updateSuccessState { current ->
+                    if (current.manga.id ==
+                        manga.id
+                    ) {
+                        current.copy(chapters = hydrated, chapterSourcePreview = null)
+                    } else {
+                        current
+                    }
+                }
+            }
+
+            val fetchFromSourceTasks = if (screenModelScope.isActive) {
+                listOf(
+                    async {
+                        when {
+                            needRefreshInfo && needRefreshChapter -> fetchMangaAndChaptersFromSource()
+                            needRefreshInfo -> fetchMangaFromSource()
+                            needRefreshChapter -> fetchChaptersFromSource()
+                        }
+                    },
+                )
+            } else {
+                emptyList()
+            }
+
+            screenModelScope.launchIO {
+                val availableScanlators = getAvailableScanlators.await(mangaId)
+                val scanlatorChapterCounts = getScanlatorChapterCounts.await(mangaId)
+                val excludedScanlators = getExcludedScanlators.await(mangaId)
+                updateSuccessState { current ->
+                    if (current.manga.id != manga.id) {
+                        current
+                    } else {
+                        current.copy(
+                            availableScanlators = availableScanlators,
+                            scanlatorChapterCounts = scanlatorChapterCounts,
+                            excludedScanlators = excludedScanlators,
+                        )
+                    }
+                }
+            }
+            screenModelScope.launchIO {
+                basePreferences.downloadedOnly().changes()
+                    .collectLatest { downloadedOnly ->
+                        updateSuccessState { it.copy(downloadedOnly = downloadedOnly) }
+                    }
+            }
+
+            // Fetch suggestions asynchronously after source refresh has been started.
+            loadSuggestions(
+                buildSuggestionSeed(manga, cachedMetadata),
+                manga = manga,
+                source = manga.toCatalogueSource(),
+            )
+
+            // Start observe tracking since it only needs mangaId
+            observeTrackers()
+
+            fetchFromSourceTasks.awaitAll()
+
+            loadMangaMetadata(mangaId)
+
+            // Initial loading finished
+            updateSuccessState { it.copy(isRefreshingData = false) }
+        }
+    }
+
+    fun fetchAllFromSource(manualFetch: Boolean = true) {
+        screenModelScope.launch {
+            updateSuccessState { it.copy(isRefreshingData = true) }
+            // One combined call: a 1.6 source rejects concurrent getMangaUpdate for the same entry.
+            fetchMangaAndChaptersFromSource(manualFetch)
+            updateSuccessState { it.copy(isRefreshingData = false) }
+            successState?.manga?.id?.let { loadMangaMetadata(it) }
+        }
+    }
+
+    fun updateMangaMetadata(
+        customTitle: String?,
+        customAuthor: String?,
+        customArtist: String?,
+        customDescription: String?,
+        customGenre: List<String>?,
+        customStatus: Long?,
+    ) {
+        screenModelScope.launchIO {
+            if (updateManga.awaitUpdateMetadata(
+                    mangaId = mangaId,
+                    customTitle = customTitle,
+                    customAuthor = customAuthor,
+                    customArtist = customArtist,
+                    customDescription = customDescription,
+                    customGenre = customGenre,
+                    customStatus = customStatus,
+                )
+            ) {
+                val newManga = mangaRepository.getMangaById(mangaId)
+                updateSuccessState { it.copy(manga = newManga) }
+                screenModelScope.launch {
+                    snackbarHostState.showSnackbar(
+                        message = context.stringResource(MR.strings.metadata_saved_successfully),
+                    )
+                }
+            }
+        }
+    }
+
+    suspend fun fetchMetadataFromTracker(
+        trackerId: Long? = null,
+    ): TrackerMetadataFetchOutcome {
+        // Prefer original source title for search; fall back to displayed title.
+        val manga = successState?.manga
+        val fallbackTitle = manga?.title?.takeIf { it.isNotBlank() }
+            ?: manga?.displayTitle
+            ?: ""
+        return fetchEntryMetadataFromTracker.fetchManga(
+            mangaId = mangaId,
+            trackerId = trackerId,
+            fallbackTitle = fallbackTitle,
+        )
+    }
+
+    fun resetMangaMetadata() {
+        screenModelScope.launchIO {
+            if (updateManga.awaitUpdateMetadata(
+                    mangaId = mangaId,
+                    customTitle = null,
+                    customAuthor = null,
+                    customArtist = null,
+                    customDescription = null,
+                    customGenre = null,
+                    customStatus = null,
+                )
+            ) {
+                val newManga = mangaRepository.getMangaById(mangaId)
+                updateSuccessState { it.copy(manga = newManga) }
+                screenModelScope.launch {
+                    snackbarHostState.showSnackbar(
+                        message = context.stringResource(MR.strings.metadata_saved_successfully),
+                    )
+                }
+            }
+        }
+    }
+
+    // Manga info - start
+
+    /** Serializes source update calls: 1.6 sources reject concurrent getMangaUpdate per entry. */
+    private val sourceUpdateMutex = Mutex()
+
+    // Lightweight in-memory TTL cache for recent combined manga update responses from source.
+    // Bypasses the network for re-opens within the TTL; manual refresh always bypasses the read
+    // but overwrites the entry with the fresh response. Never persists to disk.
+    private val recentMangaUpdateCache =
+        TtlCache<Long, eu.kanade.tachiyomi.source.model.SMangaUpdate>(ttlMs = 90_000L)
+
+    /**
+     * Fetches details and chapters in a single source call.
+     *
+     * A 1.6 source answers both from one request and rejects concurrent getMangaUpdate calls for the
+     * same entry, so the two halves must not be requested in parallel. For 1.4/1.5 sources the
+     * default bridge still issues the same two requests it always did.
+     */
+    private suspend fun fetchMangaAndChaptersFromSource(manualFetch: Boolean = false) {
+        val state = successState ?: return
+        val cacheKey = state.manga.id
+        val cached = if (!manualFetch) recentMangaUpdateCache[cacheKey] else null
+        val update = if (cached != null) {
+            cached
+        } else {
+            val fresh = try {
+                withIOContext {
+                    sourceUpdateMutex.withLock {
+                        state.source.getMangaUpdate(
+                            manga = MangaMemoRepairHelper.getOrRepairMangaRequest(
+                                state.manga,
+                                state.source,
+                                updateManga,
+                            ),
+                            chapters = emptyList(),
+                            fetchDetails = true,
+                            fetchChapters = true,
+                        )
+                    }
+                }
+            } catch (e: Throwable) {
+                handleSourceFetchError(state, e)
+                return
+            }
+            // Only cache responses that actually carried details; failed/empty parses must
+            // not poison the cache.
+            if (fresh.manga.initialized) {
+                recentMangaUpdateCache.put(cacheKey, fresh)
+            }
+            fresh
+        }
+        fetchMangaFromSource(manualFetch, prefetched = update)
+        fetchChaptersFromSource(manualFetch, prefetched = update)
+    }
+
+    /**
+     * Fetch manga information from source.
+     */
+    private suspend fun fetchMangaFromSource(
+        manualFetch: Boolean = false,
+        prefetched: SMangaUpdate? = null,
+    ) {
+        val state = successState ?: return
+        try {
+            withIOContext {
+                // Combined API: unchanged for 1.4/1.5 extensions (its default calls
+                // getMangaDetails), and works for 1.6 extensions that only implement this one.
+                val networkManga = prefetched?.manga ?: sourceUpdateMutex.withLock {
+                    state.source.getMangaUpdate(
+                        manga = MangaMemoRepairHelper.getOrRepairMangaRequest(state.manga, state.source, updateManga),
+                        chapters = emptyList(),
+                        fetchDetails = true,
+                        fetchChapters = false,
+                    ).manga
+                }
+                val sourceRating = networkManga.rating.takeIf { it > 0f }
+                debugLog(
+                    "fetchMangaFromSource: source=${state.source.name} title=${networkManga.safeTitle().previewForLog()} rating=${networkManga.rating} desc=${networkManga.description.previewForLog()}",
+                )
+                updateManga.awaitUpdateFromSource(state.manga, networkManga, manualFetch)
+                refreshMangaSourceRating(
+                    state = state,
+                    sourceRating = sourceRating,
+                    forceRefresh = manualFetch,
+                )
+            }
+        } catch (e: Throwable) {
+            handleSourceFetchError(state, e)
+        }
+    }
+
+    /** Shared failure handling for the source fetches: auth prompt, or a snackbar with the reason. */
+    private fun handleSourceFetchError(state: State.Success, e: Throwable) {
+        // Ignore early hints "errors" that aren't handled by OkHttp
+        if (e is HttpException && e.code == 103) return
+
+        val formattedMessage = e.formattedMessage(context)
+        if (isAuthenticationError(e, formattedMessage)) {
+            updateSuccessState {
+                it.copy(
+                    dialog = Dialog.AuthRequiredDialog(
+                        errorMessage = formattedMessage.ifBlank { e.message ?: "Authentication failed" },
+                        sourceId = state.source.id,
+                        sourceName = state.source.name,
+                        isConfigurable = state.source is ConfigurableSource,
+                        source = state.source,
+                    ),
+                )
+            }
+            return
+        }
+
+        logcat(LogPriority.ERROR, e)
+        screenModelScope.launch {
+            snackbarHostState.showSnackbar(message = formattedMessage)
+        }
+    }
+
+    private fun refreshMangaSourceRating(
+        state: State.Success,
+        sourceRating: Float?,
+        forceRefresh: Boolean,
+    ) {
+        screenModelScope.launchIO {
+            val fetchedRating = sourceMangaRatingFetcher.await(
+                source = state.source,
+                manga = state.manga,
+                sourceRating = sourceRating,
+                forceRefresh = forceRefresh,
+            ) ?: return@launchIO
+            updateManga.awaitUpdateSourceRating(state.manga, fetchedRating)
+        }
+    }
+
+    private suspend fun loadMangaMetadata(mangaId: Long) {
+        val currentState = successState ?: return
+        val metadataSource = uiPreferences.metadataSource().get()
+        if (metadataSource == MetadataSource.NONE) {
+            updateSuccessState {
+                it.copy(
+                    mangaMetadata = null,
+                    isMetadataLoading = false,
+                    metadataError = MetadataLoadError.Disabled,
+                )
+            }
+            return
+        }
+
+        updateSuccessState {
+            it.copy(isMetadataLoading = true, metadataError = null)
+        }
+
+        try {
+            val metadata = getMangaMetadata.await(currentState.manga)
+            updateSuccessState {
+                it.copy(
+                    mangaMetadata = metadata,
+                    isMetadataLoading = false,
+                    metadataError = if (metadata == null || !metadata.hasData()) {
+                        MetadataLoadError.NotFound
+                    } else {
+                        null
+                    },
+                )
+            }
+            loadSuggestions(
+                buildSuggestionSeed(currentState.manga, metadata),
+                manga = currentState.manga,
+                source = currentState.manga.toCatalogueSource(),
+            )
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, e) { "Failed to load manga metadata for manga $mangaId" }
+            val error = when {
+                e.isNotAuthenticatedError() -> MetadataLoadError.NotAuthenticated
+                else -> MetadataLoadError.NetworkError
+            }
+            updateSuccessState {
+                it.copy(
+                    isMetadataLoading = false,
+                    metadataError = error,
+                )
+            }
+        }
+    }
+
+    private fun Throwable.isNotAuthenticatedError(): Boolean {
+        var current: Throwable? = this
+        while (current != null) {
+            val message = current.message.orEmpty()
+            if (message.contains("Not authenticated", ignoreCase = true)) {
+                return true
+            }
+            current = current.cause
+        }
+        return false
+    }
+
+    fun toggleFavorite() {
+        toggleFavorite(
+            onRemoved = {
+                screenModelScope.launch {
+                    if (!hasDownloads()) return@launch
+                    val result = snackbarHostState.showSnackbar(
+                        message = context.stringResource(MR.strings.delete_downloads_for_manga),
+                        actionLabel = context.stringResource(MR.strings.action_delete),
+                        withDismissAction = true,
+                    )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        deleteDownloads()
+                    }
+                }
+            },
+        )
+    }
+
+    /**
+     * Update favorite status of manga, (removes / adds) manga (to / from) library.
+     */
+    fun toggleFavorite(
+        onRemoved: () -> Unit,
+        checkDuplicate: Boolean = true,
+    ) {
+        val state = successState ?: return
+        screenModelScope.launchIO {
+            val manga = state.manga
+
+            if (isFavorited) {
+                // Remove from library
+                if (updateManga.awaitUpdateFavorite(manga.id, false)) {
+                    // Remove covers and update last modified in db
+                    if (manga.removeCovers() != manga) {
+                        updateManga.awaitUpdateCoverLastModified(manga.id)
+                    }
+                    withUIContext { onRemoved() }
+                }
+            } else {
+                // Add to library
+                // First, check if duplicate exists if callback is provided
+                if (checkDuplicate) {
+                    val duplicate = getDuplicateLibraryManga.await(manga).getOrNull(0)
+
+                    if (duplicate != null) {
+                        updateSuccessState {
+                            it.copy(
+                                dialog = Dialog.DuplicateManga(manga, duplicate),
+                            )
+                        }
+                        return@launchIO
+                    }
+                }
+
+                // Now check if user previously set categories, when available
+                val categories = getCategories()
+                val defaultCategoryId = libraryPreferences.defaultMangaCategory().get().toLong()
+                val defaultCategory = categories.find { it.id == defaultCategoryId }
+                when {
+                    // Default category set
+                    defaultCategory != null -> {
+                        val result = updateManga.awaitUpdateFavorite(manga.id, true)
+                        if (!result) return@launchIO
+                        moveMangaToCategory(defaultCategory)
+                    }
+
+                    // Automatic 'Default' or no categories
+                    defaultCategoryId == 0L || categories.isEmpty() -> {
+                        val result = updateManga.awaitUpdateFavorite(manga.id, true)
+                        if (!result) return@launchIO
+                        moveMangaToCategory(null)
+                    }
+
+                    // Choose a category
+                    else -> {
+                        isFromChangeCategory = true
+                        showChangeCategoryDialog()
+                    }
+                }
+
+                // Finally match with enhanced tracking when available
+                addTracks.bindEnhancedTrackers(manga, state.source)
+                if (autoOpenTrack) {
+                    showTrackDialog()
+                }
+            }
+        }
+    }
+
+    fun showChangeCategoryDialog() {
+        val manga = successState?.manga ?: return
+        screenModelScope.launch {
+            val categories = getCategories()
+            val selection = getMangaCategoryIds(manga)
+            updateSuccessState { successState ->
+                successState.copy(
+                    dialog = Dialog.ChangeCategory(
+                        manga = manga,
+                        initialSelection = categories.mapAsCheckboxState { it.id in selection }.toImmutableList(),
+                    ),
+                )
+            }
+        }
+    }
+
+    fun showSetMangaFetchIntervalDialog() {
+        val manga = successState?.manga ?: return
+        updateSuccessState {
+            it.copy(dialog = Dialog.SetMangaFetchInterval(manga))
+        }
+    }
+
+    fun setFetchInterval(manga: Manga, interval: Int) {
+        screenModelScope.launchIO {
+            if (
+                updateManga.awaitUpdateFetchInterval(
+                    // Custom intervals are negative
+                    manga.copy(fetchInterval = -interval),
+                )
+            ) {
+                val updatedManga = mangaRepository.getMangaById(manga.id)
+                updateSuccessState { it.copy(manga = updatedManga) }
+            }
+        }
+    }
+
+    /**
+     * Returns true if the manga has any downloads.
+     */
+    private fun hasDownloads(): Boolean {
+        val manga = successState?.manga ?: return false
+        return downloadManager.getDownloadCount(manga) > 0
+    }
+
+    /**
+     * Deletes all the downloads for the manga.
+     */
+    private fun deleteDownloads() {
+        val state = successState ?: return
+        downloadManager.deleteManga(state.manga, state.source)
+    }
+
+    /**
+     * Get user categories.
+     *
+     * @return List of categories, not including the default category
+     */
+    suspend fun getCategories(): List<Category> {
+        return getCategories.await().filterNot { it.isSystemCategory }
+    }
+
+    /**
+     * Gets the category id's the manga is in, if the manga is not in a category, returns the default id.
+     *
+     * @param manga the manga to get categories from.
+     * @return Array of category ids the manga is in, if none returns default id
+     */
+    private suspend fun getMangaCategoryIds(manga: Manga): List<Long> {
+        return getCategories.await(manga.id)
+            .map { it.id }
+    }
+
+    fun moveMangaToCategoriesAndAddToLibrary(manga: Manga, categories: List<Long>) {
+        moveMangaToCategory(categories)
+        if (manga.favorite) return
+
+        screenModelScope.launchIO {
+            updateManga.awaitUpdateFavorite(manga.id, true)
+        }
+    }
+
+    /**
+     * Move the given manga to categories.
+     *
+     * @param categories the selected categories.
+     */
+    private fun moveMangaToCategories(categories: List<Category>) {
+        val categoryIds = categories.map { it.id }
+        moveMangaToCategory(categoryIds)
+    }
+
+    private fun moveMangaToCategory(categoryIds: List<Long>) {
+        screenModelScope.launchIO {
+            setMangaCategories.await(mangaId, categoryIds)
+        }
+    }
+
+    /**
+     * Move the given manga to the category.
+     *
+     * @param category the selected category, or null for default category.
+     */
+    private fun moveMangaToCategory(category: Category?) {
+        moveMangaToCategories(listOfNotNull(category))
+    }
+
+    // Manga info - end
+
+    // Chapters list - start
+
+    private fun observeDownloads() {
+        screenModelScope.launchIO {
+            downloadManager.statusFlow()
+                .filter { it.manga.id == successState?.manga?.id }
+                .catch { error -> logcat(LogPriority.ERROR, error) }
+                .flowWithLifecycle(lifecycle)
+                .collect {
+                    withUIContext {
+                        updateDownloadState(it)
+                    }
+                }
+        }
+
+        screenModelScope.launchIO {
+            downloadManager.progressFlow()
+                .filter { it.manga.id == successState?.manga?.id }
+                .catch { error -> logcat(LogPriority.ERROR, error) }
+                .flowWithLifecycle(lifecycle)
+                .collect {
+                    withUIContext {
+                        updateDownloadState(it)
+                    }
+                }
+        }
+    }
+
+    private fun updateDownloadState(download: MangaDownload) {
+        updateSuccessState { successState ->
+            val modifiedIndex = successState.chapters.indexOfFirst { it.id == download.chapter.id }
+            if (modifiedIndex < 0) return@updateSuccessState successState
+
+            val newChapters = successState.chapters.toMutableList().apply {
+                val item = removeAt(modifiedIndex)
+                    .copy(downloadState = download.status, downloadProgress = download.progress)
+                add(modifiedIndex, item)
+            }
+            successState.copy(chapters = newChapters)
+        }
+    }
+
+    private fun updateNewChapterIds(
+        addedIds: Iterable<Long> = emptyList(),
+        clearedIds: Iterable<Long> = emptyList(),
+    ) {
+        updateSuccessState { successState ->
+            successState.copy(
+                newChapterIds = mergeNewItemIds(
+                    existingNewItemIds = successState.newChapterIds,
+                    addedItemIds = addedIds,
+                    clearedItemIds = clearedIds,
+                ),
+            )
+        }
+    }
+
+    private fun List<Chapter>.toChapterListItems(manga: Manga): List<ChapterList.Item> {
+        val isLocal = manga.isLocal()
+        return map { chapter ->
+            val activeDownload = if (isLocal) {
+                null
+            } else {
+                downloadManager.getQueuedDownloadOrNull(chapter.id)
+            }
+            val downloaded = if (isLocal) {
+                true
+            } else {
+                downloadManager.isChapterDownloaded(
+                    chapter.name,
+                    chapter.scanlator,
+                    manga.title,
+                    manga.source,
+                )
+            }
+            val downloadState = when {
+                activeDownload != null -> activeDownload.status
+                downloaded -> MangaDownload.State.DOWNLOADED
+                else -> MangaDownload.State.NOT_DOWNLOADED
+            }
+
+            ChapterList.Item(
+                chapter = chapter,
+                downloadState = downloadState,
+                downloadProgress = activeDownload?.progress ?: 0,
+                selected = chapter.id in selectedChapterIds,
+            )
+        }
+    }
+
+    /** Cheap version for initial state: defers expensive FS isDownloaded checks. Aurora list appears immediately. */
+    private fun List<Chapter>.toChapterListItemsCheap(manga: Manga): List<ChapterList.Item> {
+        val isLocal = manga.isLocal()
+        return map { chapter ->
+            val activeDownload = if (isLocal) null else downloadManager.getQueuedDownloadOrNull(chapter.id)
+            val downloadState = when {
+                activeDownload != null -> activeDownload.status
+                isLocal -> MangaDownload.State.DOWNLOADED
+                else -> MangaDownload.State.NOT_DOWNLOADED
+            }
+            ChapterList.Item(
+                chapter = chapter,
+                downloadState = downloadState,
+                downloadProgress = activeDownload?.progress ?: 0,
+                selected = chapter.id in selectedChapterIds,
+            )
+        }
+    }
+
+    /**
+     * Requests an updated list of chapters from the source.
+     */
+    private suspend fun fetchChaptersFromSource(
+        manualFetch: Boolean = false,
+        prefetched: SMangaUpdate? = null,
+    ) {
+        val state = successState ?: return
+        try {
+            withIOContext {
+                val getStart = System.currentTimeMillis()
+                // Combined API: unchanged for 1.4/1.5 extensions, and the only entry point a
+                // 1.6 extension implements - calling getChapterList there throws.
+                val sourceChapters = prefetched?.chapters ?: sourceUpdateMutex.withLock {
+                    state.source.getMangaUpdate(
+                        manga = MangaMemoRepairHelper.getOrRepairMangaRequest(state.manga, state.source, updateManga),
+                        chapters = emptyList(),
+                        fetchDetails = false,
+                        fetchChapters = true,
+                    ).chapters
+                }
+                val getMs = System.currentTimeMillis() - getStart
+                logcat(LogPriority.DEBUG) {
+                    "TADAMI_PERF_MANGA_TITLE getChapterList-done id=${state.manga.id} count=${sourceChapters.size} took=${getMs}ms"
+                }
+
+                // Preview for display only: list becomes visible right after parse (before full sync cost).
+                // Real chapters (with persisted ids) will come via DB flow / collector later.
+                val previewItems = sourceChapters.mapIndexed { idx, sCh ->
+                    val dummy = Chapter(
+                        id = -(1000000000L + idx),
+                        mangaId = state.manga.id,
+                        read = false,
+                        bookmark = false,
+                        lastPageRead = 0L,
+                        dateFetch = 0L,
+                        sourceOrder = 0L,
+                        url = sCh.url,
+                        name = sCh.name,
+                        dateUpload = sCh.date_upload,
+                        chapterNumber = sCh.chapter_number.toDouble(),
+                        scanlator = sCh.scanlator,
+                        lastModifiedAt = 0L,
+                        version = 0L,
+                    )
+                    ChapterList.Item(
+                        chapter = dummy,
+                        downloadState = MangaDownload.State.NOT_DOWNLOADED,
+                        downloadProgress = 0,
+                        selected = false,
+                    )
+                }
+                updateSuccessState { current ->
+                    if (current.manga.id ==
+                        state.manga.id
+                    ) {
+                        current.copy(chapterSourcePreview = previewItems)
+                    } else {
+                        current
+                    }
+                }
+                logcat(LogPriority.DEBUG) {
+                    "TADAMI_PERF_MANGA_TITLE preview-pushed id=${state.manga.id} count=${previewItems.size}"
+                }
+
+                val syncStart = System.currentTimeMillis()
+                val newChapters = syncChaptersWithSource.await(
+                    sourceChapters,
+                    state.manga,
+                    state.source,
+                    manualFetch,
+                )
+                val syncMs = System.currentTimeMillis() - syncStart
+                logcat(LogPriority.DEBUG) {
+                    "TADAMI_PERF_MANGA_TITLE syncChapters-done id=${state.manga.id} new=${newChapters.size} took=${syncMs}ms"
+                }
+
+                // Immediately push real chapters after sync (in addition to DB flow) so resolve is fast
+                updateSuccessState { current ->
+                    if (current.manga.id == state.manga.id) {
+                        current.copy(
+                            chapterSourcePreview = null,
+                        )
+                    } else {
+                        current
+                    }
+                }
+
+                if (manualFetch) {
+                    downloadNewChapters(newChapters)
+                }
+
+                updateNewChapterIds(
+                    addedIds = newChapters.asSequence()
+                        .filterNot { it.read }
+                        .map { it.id }
+                        .toList(),
+                )
+            }
+        } catch (e: Throwable) {
+            val formattedMessage = e.formattedMessage(context)
+            if (isAuthenticationError(e, formattedMessage)) {
+                updateSuccessState {
+                    it.copy(
+                        dialog = Dialog.AuthRequiredDialog(
+                            errorMessage = formattedMessage.ifBlank { e.message ?: "Authentication failed" },
+                            sourceId = state.source.id,
+                            sourceName = state.source.name,
+                            isConfigurable = state.source is ConfigurableSource,
+                            source = state.source,
+                        ),
+                    )
+                }
+                return
+            }
+            val message = if (e is NoChaptersException) {
+                context.stringResource(MR.strings.no_chapters_error)
+            } else {
+                logcat(LogPriority.ERROR, e)
+                formattedMessage
+            }
+
+            screenModelScope.launch {
+                snackbarHostState.showSnackbar(message = message)
+            }
+            val newManga = mangaRepository.getMangaById(mangaId)
+            updateSuccessState { it.copy(manga = newManga, isRefreshingData = false) }
+        }
+    }
+
+    private fun isAuthenticationError(exception: Throwable, formattedMessage: String? = null): Boolean {
+        val candidates = listOfNotNull(exception.message, exception.cause?.message, formattedMessage)
+        val haystack = candidates.joinToString(" ").lowercase()
+        return listOf(
+            "авториз",
+            "auth",
+            "login",
+            "логин",
+            "пароль",
+            "password",
+            "настройках",
+            "settings",
+        ).any { it in haystack }
+    }
+
+    /**
+     * @throws IllegalStateException if the swipe action is [LibraryPreferences.ChapterSwipeAction.Disabled]
+     */
+    fun chapterSwipe(chapterItem: ChapterList.Item, swipeAction: LibraryPreferences.ChapterSwipeAction) {
+        screenModelScope.launch {
+            executeChapterSwipeAction(chapterItem, swipeAction)
+        }
+    }
+
+    /**
+     * @throws IllegalStateException if the swipe action is [LibraryPreferences.ChapterSwipeAction.Disabled]
+     */
+    suspend fun resolveChapterForOpen(previewOrReal: Chapter): Chapter {
+        if (previewOrReal.id > 0) return previewOrReal
+        // Wait for the sync to populate the real persisted chapter (by url) without
+        // busy-polling: the state flow emits on sync progress, so a first{} with a short
+        // timeout resolves as soon as the chapter lands in state.
+        val resolved = withTimeoutOrNull(3_000L) {
+            state.first { current ->
+                val success = current as? State.Success
+                val real = success?.chapters?.firstOrNull { it.chapter.url == previewOrReal.url }
+                real != null && real.chapter.id > 0
+            }
+        }
+        val success = resolved as? State.Success
+        return success?.chapters?.firstOrNull { it.chapter.url == previewOrReal.url }?.chapter
+            ?: previewOrReal // fallback (may cause issues in reader, but rare)
+    }
+
+    private fun executeChapterSwipeAction(
+        chapterItem: ChapterList.Item,
+        swipeAction: LibraryPreferences.ChapterSwipeAction,
+    ) {
+        val chapter = chapterItem.chapter
+        when (swipeAction) {
+            LibraryPreferences.ChapterSwipeAction.ToggleRead -> {
+                markChaptersRead(listOf(chapter), !chapter.read)
+            }
+            LibraryPreferences.ChapterSwipeAction.ToggleBookmark -> {
+                bookmarkChapters(listOf(chapter), !chapter.bookmark)
+            }
+            LibraryPreferences.ChapterSwipeAction.Download -> {
+                val downloadAction: ChapterDownloadAction = when (chapterItem.downloadState) {
+                    MangaDownload.State.ERROR,
+                    MangaDownload.State.NOT_DOWNLOADED,
+                    -> ChapterDownloadAction.START_NOW
+                    MangaDownload.State.QUEUE,
+                    MangaDownload.State.DOWNLOADING,
+                    -> ChapterDownloadAction.CANCEL
+                    MangaDownload.State.DOWNLOADED -> ChapterDownloadAction.DELETE
+                }
+                runChapterDownloadActions(
+                    items = listOf(chapterItem),
+                    action = downloadAction,
+                )
+            }
+            LibraryPreferences.ChapterSwipeAction.Disabled -> throw IllegalStateException()
+        }
+    }
+
+    /**
+     * Returns the next unread chapter or null if everything is read.
+     */
+    fun getNextUnreadChapter(): Chapter? {
+        val successState = successState ?: return null
+        return successState.chapters.getNextUnread(
+            manga = successState.manga,
+            downloadedOnly = successState.downloadedOnly,
+        )
+    }
+
+    suspend fun getContinueChapter(): Chapter? = withIOContext {
+        val successState = successState ?: return@withIOContext null
+        val historyChapterId = mangaHistoryRepository.getHistoryByMangaId(mangaId)
+            .maxByOrNull { it.readAt?.time ?: Long.MIN_VALUE }
+            ?.chapterId
+        resolveMangaResumeChapterFromSorted(
+            sortedChapters = sortedResumeChapters(successState.chapters),
+            fromChapterId = historyChapterId,
+        )
+    }
+
+    // PERF: cache the resume-order sorted chapter list across CTA taps; invalidated by the
+    // reference of the state list (a new list instance is created on every state update).
+    private var sortedResumeChaptersOwner: Any? = null
+    private var sortedResumeChaptersCache: List<Chapter> = emptyList()
+
+    private fun sortedResumeChapters(chapters: List<ChapterList.Item>): List<Chapter> {
+        val owner: Any = chapters
+        if (sortedResumeChaptersOwner !== owner) {
+            sortedResumeChaptersCache = chapters
+                .map { it.chapter }
+                .sortedWith(mangaChapterResumeComparator)
+            sortedResumeChaptersOwner = owner
+        }
+        return sortedResumeChaptersCache
+    }
+
+    fun saveScrollPosition(index: Int, offset: Int) {
+        updateSuccessState { it.copy(scrollIndex = index, scrollOffset = offset) }
+    }
+
+    private fun getUnreadChapters(): List<Chapter> {
+        val chapterItems = if (skipFiltered) filteredChapters.orEmpty() else allChapters.orEmpty()
+        return chapterItems
+            .filter { (chapter, dlStatus) -> !chapter.read && dlStatus == MangaDownload.State.NOT_DOWNLOADED }
+            .map { it.chapter }
+    }
+
+    private fun getUnreadChaptersSorted(): List<Chapter> {
+        val manga = successState?.manga ?: return emptyList()
+        val chaptersSorted = getUnreadChapters().sortedWith(getChapterSort(manga))
+        return if (manga.sortDescending()) chaptersSorted.reversed() else chaptersSorted
+    }
+
+    private fun startDownload(
+        chapters: List<Chapter>,
+        startNow: Boolean,
+    ) {
+        val successState = successState ?: return
+
+        screenModelScope.launchNonCancellable {
+            if (startNow) {
+                val chapterId = chapters.singleOrNull()?.id ?: return@launchNonCancellable
+                downloadManager.startDownloadNow(chapterId)
+            } else {
+                downloadChapters(chapters)
+            }
+
+            if (!isFavorited && !successState.hasPromptedToAddBefore) {
+                updateSuccessState { state ->
+                    state.copy(hasPromptedToAddBefore = true)
+                }
+                val result = snackbarHostState.showSnackbar(
+                    message = context.stringResource(AYMR.strings.snack_add_to_manga_library),
+                    actionLabel = context.stringResource(MR.strings.action_add),
+                    withDismissAction = true,
+                )
+                if (result == SnackbarResult.ActionPerformed && !isFavorited) {
+                    toggleFavorite()
+                }
+            }
+        }
+    }
+
+    fun runChapterDownloadActions(
+        items: List<ChapterList.Item>,
+        action: ChapterDownloadAction,
+    ) {
+        when (action) {
+            ChapterDownloadAction.START -> {
+                startDownload(items.map { it.chapter }, false)
+                if (items.any { it.downloadState == MangaDownload.State.ERROR }) {
+                    downloadManager.startDownloads()
+                }
+            }
+            ChapterDownloadAction.START_NOW -> {
+                val chapter = items.singleOrNull()?.chapter ?: return
+                startDownload(listOf(chapter), true)
+            }
+            ChapterDownloadAction.CANCEL -> {
+                val chapterId = items.singleOrNull()?.id ?: return
+                cancelDownload(chapterId)
+            }
+            ChapterDownloadAction.DELETE -> {
+                deleteChapters(items.map { it.chapter })
+            }
+        }
+    }
+
+    fun runDownloadAction(action: DownloadAction) {
+        val chaptersToDownload = when (action) {
+            DownloadAction.NEXT_1_ITEM -> getUnreadChaptersSorted().take(1)
+            DownloadAction.NEXT_5_ITEMS -> getUnreadChaptersSorted().take(5)
+            DownloadAction.NEXT_10_ITEMS -> getUnreadChaptersSorted().take(10)
+            DownloadAction.NEXT_25_ITEMS -> getUnreadChaptersSorted().take(25)
+
+            DownloadAction.UNVIEWED_ITEMS -> getUnreadChapters()
+        }
+        if (chaptersToDownload.isNotEmpty()) {
+            startDownload(chaptersToDownload, false)
+        }
+    }
+
+    private fun cancelDownload(chapterId: Long) {
+        val activeDownload = downloadManager.getQueuedDownloadOrNull(chapterId) ?: return
+        downloadManager.cancelQueuedDownloads(listOf(activeDownload))
+        updateDownloadState(activeDownload.apply { status = MangaDownload.State.NOT_DOWNLOADED })
+    }
+
+    fun markPreviousChapterRead(pointer: Chapter) {
+        val manga = successState?.manga ?: return
+        val chapters = filteredChapters.orEmpty().map { it.chapter }
+        val prevChapters = if (manga.sortDescending()) chapters.asReversed() else chapters
+        val pointerPos = prevChapters.indexOf(pointer)
+        if (pointerPos != -1) markChaptersRead(prevChapters.take(pointerPos), true)
+    }
+
+    /**
+     * Mark the selected chapter list as read/unread.
+     * @param chapters the list of selected chapters.
+     * @param read whether to mark chapters as read or unread.
+     */
+    fun markChaptersRead(chapters: List<Chapter>, read: Boolean) {
+        toggleAllSelection(false)
+        if (chapters.isEmpty()) return
+        screenModelScope.launchIO {
+            setReadStatus.await(
+                read = read,
+                chapters = chapters.toTypedArray(),
+            )
+
+            if (read) {
+                updateNewChapterIds(clearedIds = chapters.map { it.id })
+            }
+
+            if (!read || successState?.hasLoggedInTrackers == false || autoTrackState == AutoTrackState.NEVER) {
+                return@launchIO
+            }
+
+            refreshTrackers()
+
+            val tracks = getTracks.await(mangaId)
+            val maxChapterNumber = chapters.maxOf { it.chapterNumber }
+            val shouldPromptTrackingUpdate = tracks.any { track -> maxChapterNumber > track.lastChapterRead }
+
+            if (!shouldPromptTrackingUpdate) return@launchIO
+
+            if (autoTrackState == AutoTrackState.ALWAYS) {
+                trackChapter.await(context, mangaId, maxChapterNumber)
+                withUIContext {
+                    context.toast(
+                        context.stringResource(AYMR.strings.trackers_updated_summary_manga, maxChapterNumber.toInt()),
+                    )
+                }
+                return@launchIO
+            }
+
+            val result = snackbarHostState.showSnackbar(
+                message = context.stringResource(MR.strings.confirm_tracker_update, maxChapterNumber.toInt()),
+                actionLabel = context.stringResource(MR.strings.action_ok),
+                duration = SnackbarDuration.Short,
+                withDismissAction = true,
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                trackChapter.await(context, mangaId, maxChapterNumber)
+            }
+        }
+    }
+
+    private suspend fun refreshTrackers(
+        refreshTracks: RefreshMangaTracks = Injekt.get(),
+    ) {
+        refreshTracks.await(mangaId)
+            .filter { it.first != null }
+            .forEach { (track, e) ->
+                logcat(LogPriority.ERROR, e) {
+                    "Failed to refresh track data mangaId=$mangaId for service ${track!!.id}"
+                }
+                withUIContext {
+                    context.toast(
+                        context.stringResource(
+                            MR.strings.track_error,
+                            track!!.name,
+                            e.message ?: "",
+                        ),
+                    )
+                }
+            }
+    }
+
+    /**
+     * Downloads the given list of chapters with the manager.
+     * @param chapters the list of chapters to download.
+     */
+    private fun downloadChapters(chapters: List<Chapter>) {
+        val manga = successState?.manga ?: return
+        downloadManager.downloadChapters(manga, chapters)
+        toggleAllSelection(false)
+    }
+
+    /**
+     * Bookmarks the given list of chapters.
+     * @param chapters the list of chapters to bookmark.
+     */
+    fun bookmarkChapters(chapters: List<Chapter>, bookmarked: Boolean) {
+        screenModelScope.launchIO {
+            chapters
+                .filterNot { it.bookmark == bookmarked }
+                .map { ChapterUpdate(id = it.id, bookmark = bookmarked) }
+                .let { updateChapter.awaitAll(it) }
+        }
+        toggleAllSelection(false)
+    }
+
+    /**
+     * Deletes the given list of chapter.
+     *
+     * @param chapters the list of chapters to delete.
+     */
+    fun deleteChapters(chapters: List<Chapter>) {
+        screenModelScope.launchNonCancellable {
+            try {
+                successState?.let { state ->
+                    downloadManager.deleteChapters(
+                        chapters,
+                        state.manga,
+                        state.source,
+                    )
+                }
+            } catch (e: Throwable) {
+                logcat(LogPriority.ERROR, e)
+            }
+        }
+    }
+
+    private fun downloadNewChapters(chapters: List<Chapter>) {
+        screenModelScope.launchNonCancellable {
+            val manga = successState?.manga ?: return@launchNonCancellable
+            val chaptersToDownload = filterChaptersForDownload.await(manga, chapters)
+
+            if (chaptersToDownload.isNotEmpty()) {
+                downloadChapters(chaptersToDownload)
+            }
+        }
+    }
+
+    /**
+     * Sets the read filter and requests an UI update.
+     * @param state whether to display only unread chapters or all chapters.
+     */
+    fun setUnreadFilter(state: TriState) {
+        val manga = successState?.manga ?: return
+
+        val flag = when (state) {
+            TriState.DISABLED -> Manga.SHOW_ALL
+            TriState.ENABLED_IS -> Manga.CHAPTER_SHOW_UNREAD
+            TriState.ENABLED_NOT -> Manga.CHAPTER_SHOW_READ
+        }
+        screenModelScope.launchNonCancellable {
+            setMangaChapterFlags.awaitSetUnreadFilter(manga, flag)
+        }
+    }
+
+    /**
+     * Sets the download filter and requests an UI update.
+     * @param state whether to display only downloaded chapters or all chapters.
+     */
+    fun setDownloadedFilter(state: TriState) {
+        val manga = successState?.manga ?: return
+
+        val flag = when (state) {
+            TriState.DISABLED -> Manga.SHOW_ALL
+            TriState.ENABLED_IS -> Manga.CHAPTER_SHOW_DOWNLOADED
+            TriState.ENABLED_NOT -> Manga.CHAPTER_SHOW_NOT_DOWNLOADED
+        }
+
+        screenModelScope.launchNonCancellable {
+            setMangaChapterFlags.awaitSetDownloadedFilter(manga, flag)
+        }
+    }
+
+    /**
+     * Sets the bookmark filter and requests an UI update.
+     * @param state whether to display only bookmarked chapters or all chapters.
+     */
+    fun setBookmarkedFilter(state: TriState) {
+        val manga = successState?.manga ?: return
+
+        val flag = when (state) {
+            TriState.DISABLED -> Manga.SHOW_ALL
+            TriState.ENABLED_IS -> Manga.CHAPTER_SHOW_BOOKMARKED
+            TriState.ENABLED_NOT -> Manga.CHAPTER_SHOW_NOT_BOOKMARKED
+        }
+
+        screenModelScope.launchNonCancellable {
+            setMangaChapterFlags.awaitSetBookmarkFilter(manga, flag)
+        }
+    }
+
+    /**
+     * Sets the active display mode.
+     * @param mode the mode to set.
+     */
+    fun setDisplayMode(mode: Long) {
+        val manga = successState?.manga ?: return
+
+        screenModelScope.launchNonCancellable {
+            setMangaChapterFlags.awaitSetDisplayMode(manga, mode)
+        }
+    }
+
+    /**
+     * Sets the sorting method and requests an UI update.
+     * @param sort the sorting mode.
+     */
+    fun setSorting(sort: Long) {
+        val manga = successState?.manga ?: return
+
+        screenModelScope.launchNonCancellable {
+            setMangaChapterFlags.awaitSetSortingModeOrFlipOrder(manga, sort)
+        }
+    }
+
+    fun setCurrentSettingsAsDefault(applyToExisting: Boolean) {
+        val manga = successState?.manga ?: return
+        screenModelScope.launchNonCancellable {
+            libraryPreferences.setChapterSettingsDefault(manga)
+            if (applyToExisting) {
+                setMangaDefaultChapterFlags.awaitAll()
+            }
+            snackbarHostState.showSnackbar(
+                message = context.stringResource(MR.strings.chapter_settings_updated),
+            )
+        }
+    }
+
+    fun resetToDefaultSettings() {
+        val manga = successState?.manga ?: return
+        screenModelScope.launchNonCancellable {
+            setMangaDefaultChapterFlags.await(manga)
+        }
+    }
+
+    fun toggleSelection(
+        item: ChapterList.Item,
+        selected: Boolean,
+        userSelected: Boolean = false,
+        fromLongPress: Boolean = false,
+    ) {
+        updateSuccessState { successState ->
+            val newChapters = successState.processedChapters.toMutableList().apply {
+                val selectedIndex = successState.processedChapters.indexOfFirst { it.id == item.chapter.id }
+                if (selectedIndex < 0) return@apply
+
+                val selectedItem = get(selectedIndex)
+                if ((selectedItem.selected && selected) || (!selectedItem.selected && !selected)) return@apply
+
+                val firstSelection = none { it.selected }
+                set(selectedIndex, selectedItem.copy(selected = selected))
+                selectedChapterIds.addOrRemove(item.id, selected)
+
+                if (selected && userSelected && fromLongPress) {
+                    if (firstSelection) {
+                        selectedPositions[0] = selectedIndex
+                        selectedPositions[1] = selectedIndex
+                    } else {
+                        // Try to select the items in-between when possible
+                        val range: IntRange
+                        if (selectedIndex < selectedPositions[0]) {
+                            range = selectedIndex + 1..<selectedPositions[0]
+                            selectedPositions[0] = selectedIndex
+                        } else if (selectedIndex > selectedPositions[1]) {
+                            range = (selectedPositions[1] + 1)..<selectedIndex
+                            selectedPositions[1] = selectedIndex
+                        } else {
+                            // Just select itself
+                            range = IntRange.EMPTY
+                        }
+
+                        range.forEach {
+                            val inbetweenItem = get(it)
+                            if (!inbetweenItem.selected) {
+                                selectedChapterIds.add(inbetweenItem.id)
+                                set(it, inbetweenItem.copy(selected = true))
+                            }
+                        }
+                    }
+                } else if (userSelected && !fromLongPress) {
+                    if (!selected) {
+                        if (selectedIndex == selectedPositions[0]) {
+                            selectedPositions[0] = indexOfFirst { it.selected }
+                        } else if (selectedIndex == selectedPositions[1]) {
+                            selectedPositions[1] = indexOfLast { it.selected }
+                        }
+                    } else {
+                        if (selectedIndex < selectedPositions[0]) {
+                            selectedPositions[0] = selectedIndex
+                        } else if (selectedIndex > selectedPositions[1]) {
+                            selectedPositions[1] = selectedIndex
+                        }
+                    }
+                }
+            }
+            successState.copy(chapters = newChapters)
+        }
+    }
+
+    fun toggleAllSelection(selected: Boolean) {
+        updateSuccessState { successState ->
+            val newChapters = successState.chapters.map {
+                selectedChapterIds.addOrRemove(it.id, selected)
+                it.copy(selected = selected)
+            }
+            selectedPositions[0] = -1
+            selectedPositions[1] = -1
+            successState.copy(chapters = newChapters)
+        }
+    }
+
+    fun invertSelection() {
+        updateSuccessState { successState ->
+            val newChapters = successState.chapters.map {
+                selectedChapterIds.addOrRemove(it.id, !it.selected)
+                it.copy(selected = !it.selected)
+            }
+            selectedPositions[0] = -1
+            selectedPositions[1] = -1
+            successState.copy(chapters = newChapters)
+        }
+    }
+
+    // Chapters list - end
+
+    // Track sheet - start
+
+    private fun observeTrackers() {
+        val manga = successState?.manga ?: return
+
+        screenModelScope.launchIO {
+            combine(
+                getTracks.subscribe(manga.id).catch { logcat(LogPriority.ERROR, it) },
+                trackerManager.loggedInTrackersFlow(),
+            ) { mangaTracks, loggedInTrackers ->
+                // Show only if the service supports this manga's source
+                val supportedTrackers = loggedInTrackers.filter {
+                    (it as? EnhancedMangaTracker)?.accept(source!!) ?: true
+                }
+                val supportedTrackerIds = supportedTrackers.map { it.id }.toHashSet()
+                val supportedTrackerTracks = mangaTracks.filter { it.trackerId in supportedTrackerIds }
+                supportedTrackerTracks.size to supportedTrackers.isNotEmpty()
+            }
+                .flowWithLifecycle(lifecycle)
+                .distinctUntilChanged()
+                .collectLatest { (trackingCount, hasLoggedInTrackers) ->
+                    updateSuccessState {
+                        it.copy(
+                            trackingCount = trackingCount,
+                            hasLoggedInTrackers = hasLoggedInTrackers,
+                        )
+                    }
+                }
+        }
+    }
+
+    // Track sheet - end
+
+    sealed interface Dialog {
+        data class ChangeCategory(
+            val manga: Manga,
+            val initialSelection: ImmutableList<CheckboxState<Category>>,
+        ) : Dialog
+        data class DeleteChapters(val chapters: List<Chapter>) : Dialog
+        data class DuplicateManga(val manga: Manga, val duplicate: Manga) : Dialog
+        data class Migrate(val newManga: Manga, val oldManga: Manga) : Dialog
+        data class SetMangaFetchInterval(val manga: Manga) : Dialog
+        data object SettingsSheet : Dialog
+        data object TrackSheet : Dialog
+        data object FullCover : Dialog
+        data class AuthRequiredDialog(
+            val errorMessage: String,
+            val sourceId: Long,
+            val sourceName: String,
+            val isConfigurable: Boolean,
+            val source: MangaSource,
+        ) : Dialog
+    }
+
+    fun dismissDialog() {
+        updateSuccessState { it.copy(dialog = null) }
+    }
+
+    fun showDeleteChapterDialog(chapters: List<Chapter>) {
+        updateSuccessState { it.copy(dialog = Dialog.DeleteChapters(chapters)) }
+    }
+
+    fun showSettingsDialog() {
+        updateSuccessState { it.copy(dialog = Dialog.SettingsSheet) }
+    }
+
+    fun showTrackDialog() {
+        updateSuccessState { it.copy(dialog = Dialog.TrackSheet) }
+    }
+
+    fun showCoverDialog() {
+        updateSuccessState { it.copy(dialog = Dialog.FullCover) }
+        // Trigger cover update to fetch full-size image from source
+        screenModelScope.launchIO {
+            fetchMangaFromSource(manualFetch = true)
+        }
+    }
+
+    fun showMigrateDialog(duplicate: Manga) {
+        val manga = successState?.manga ?: return
+        updateSuccessState { it.copy(dialog = Dialog.Migrate(newManga = manga, oldManga = duplicate)) }
+    }
+
+    fun setExcludedScanlators(excludedScanlators: Set<String>) {
+        screenModelScope.launchIO {
+            setExcludedScanlators.await(mangaId, excludedScanlators)
+        }
+    }
+
+    fun selectScanlator(scanlator: String?) {
+        val availableScanlators = successState?.availableScanlators.orEmpty()
+        val excluded = resolveExcludedScanlatorsForSelection(
+            selectedScanlator = scanlator,
+            availableScanlators = availableScanlators,
+        )
+        screenModelScope.launchIO {
+            setExcludedScanlators.await(mangaId, excluded)
+        }
+    }
+
+    sealed interface State {
+        @Immutable
+        data object Loading : State
+
+        @Immutable
+        data class Success(
+            val manga: Manga,
+            val source: MangaSource,
+            val isFromSource: Boolean,
+            val chapters: List<ChapterList.Item>,
+            val availableScanlators: Set<String>,
+            val scanlatorChapterCounts: Map<String, Int>,
+            val excludedScanlators: Set<String>,
+            val downloadedOnly: Boolean = false,
+            val newChapterIds: Set<Long> = emptySet(),
+            val trackingCount: Int = 0,
+            val hasLoggedInTrackers: Boolean = false,
+            val isRefreshingData: Boolean = false,
+            val dialog: Dialog? = null,
+            val hasPromptedToAddBefore: Boolean = false,
+            val mangaMetadata: ExternalMetadata? = null,
+            val isMetadataLoading: Boolean = false,
+            val metadataError: MetadataLoadError? = null,
+            val scrollIndex: Int = 0,
+            val scrollOffset: Int = 0,
+            val suggestions: SuggestionState = SuggestionState.Idle,
+            /** Display-only preview from source list (after getChapterList, before full sync). Real persisted chapters come via DB flow. */
+            val chapterSourcePreview: List<ChapterList.Item>? = null,
+        ) : State {
+            val processedChapters by lazy {
+                val displayChapters = chapterSourcePreview ?: chapters
+                displayChapters.applyFilters(manga).toList()
+            }
+
+            val targetChapterIndex by lazy {
+                TargetChapterCalculator.calculate(processedChapters) { it.chapter.read }
+            }
+
+            val isAnySelected by lazy {
+                chapters.fastAny { it.selected }
+            }
+
+            val chapterListItems by lazy {
+                processedChapters.insertSeparators { before, after ->
+                    val (lowerChapter, higherChapter) = if (manga.sortDescending()) {
+                        after to before
+                    } else {
+                        before to after
+                    }
+                    if (higherChapter == null) return@insertSeparators null
+
+                    if (lowerChapter == null) {
+                        floor(higherChapter.chapter.chapterNumber)
+                            .toInt()
+                            .minus(1)
+                            .coerceAtLeast(0)
+                    } else {
+                        calculateChapterGap(higherChapter.chapter, lowerChapter.chapter)
+                    }
+                        .takeIf { it > 0 }
+                        ?.let { missingCount ->
+                            ChapterList.MissingCount(
+                                id = "${lowerChapter?.id}-${higherChapter.id}",
+                                count = missingCount,
+                            )
+                        }
+                }
+            }
+
+            val scanlatorFilterActive: Boolean
+                get() = excludedScanlators.intersect(availableScanlators).isNotEmpty()
+
+            val selectedScanlator: String?
+                get() = resolveSelectedScanlator(
+                    availableScanlators = availableScanlators,
+                    excludedScanlators = excludedScanlators,
+                )
+
+            val showScanlatorSelector: Boolean
+                get() = scanlatorChapterCounts.size > 1
+
+            val filterActive: Boolean
+                get() = scanlatorFilterActive || manga.chaptersFiltered(downloadedOnly)
+
+            val trackingAvailable: Boolean
+                get() = trackingCount > 0
+
+            /**
+             * Applies the view filters to the list of chapters obtained from the database.
+             * @return an observable of the list of chapters filtered and sorted.
+             */
+            private fun List<ChapterList.Item>.applyFilters(manga: Manga): Sequence<ChapterList.Item> {
+                val isLocalManga = manga.isLocal()
+                val unreadFilter = manga.unreadFilter
+                val downloadedFilter = manga.effectiveDownloadedFilter(downloadedOnly)
+                val bookmarkedFilter = manga.bookmarkedFilter
+                return asSequence()
+                    .filter { (chapter) -> applyFilter(unreadFilter) { !chapter.read } }
+                    .filter { (chapter) -> applyFilter(bookmarkedFilter) { chapter.bookmark } }
+                    .filter { applyFilter(downloadedFilter) { it.isDownloaded || isLocalManga } }
+                    .sortedWith { (chapter1), (chapter2) ->
+                        getChapterSort(manga).invoke(
+                            chapter1,
+                            chapter2,
+                        )
+                    }
+            }
+        }
+    }
+
+    private fun debugLog(message: String) {
+        runCatching { Log.d("MangaScreenModel", message) }
+    }
+
+    private fun String?.previewForLog(limit: Int = 120): String {
+        return this
+            ?.replace(Regex("\\s+"), " ")
+            ?.take(limit)
+            .orEmpty()
+    }
+
+    private fun SManga.safeTitle(): String {
+        return runCatching { title }.getOrDefault("")
+    }
+}
+
+internal fun resolveSelectedScanlator(
+    availableScanlators: Set<String>,
+    excludedScanlators: Set<String>,
+): String? {
+    if (availableScanlators.isEmpty()) return null
+    val effectiveExcluded = excludedScanlators.intersect(availableScanlators)
+    val included = availableScanlators - effectiveExcluded
+    return included.singleOrNull()
+}
+
+@Suppress("UNUSED_PARAMETER")
+internal fun resolveExcludedScanlatorsForSelection(
+    selectedScanlator: String?,
+    availableScanlators: Set<String>,
+): Set<String> {
+    val selection = selectedScanlator?.trim().orEmpty()
+    if (selection.isEmpty()) return emptySet()
+    val normalizedAvailable = availableScanlators
+        .asSequence()
+        .map { scanlator -> scanlator.trim() }
+        .filter { scanlator -> scanlator.isNotEmpty() }
+        .toSet()
+    if (selection !in normalizedAvailable) return emptySet()
+    return normalizedAvailable - selection
+}
+
+internal fun shouldApplyDefaultChapterFlags(manga: Manga): Boolean {
+    return !manga.favorite && manga.chapterFlags == Manga.SHOW_ALL
+}
+
+@Immutable
+sealed class ChapterList {
+    @Immutable
+    data class MissingCount(
+        val id: String,
+        val count: Int,
+    ) : ChapterList()
+
+    @Immutable
+    data class Item(
+        val chapter: Chapter,
+        val downloadState: MangaDownload.State,
+        val downloadProgress: Int,
+        val selected: Boolean = false,
+    ) : ChapterList() {
+        val id = chapter.id
+        val isDownloaded = downloadState == MangaDownload.State.DOWNLOADED
+    }
+}

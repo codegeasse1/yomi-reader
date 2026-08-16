@@ -1,0 +1,447 @@
+package tachiyomi.data.achievement
+
+import android.content.SharedPreferences
+import dev.icerock.moko.resources.StringResource
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import logcat.LogPriority
+import logcat.logcat
+import tachiyomi.domain.achievement.model.Achievement
+import tachiyomi.i18n.MR
+
+/**
+ * Manages unlockable content that is unlocked via achievements.
+ * Handles themes, badges, display preferences, and other unlockables.
+ */
+class UnlockableManager(
+    private val preferences: SharedPreferences,
+    private val userProfileManager: UserProfileManager,
+) {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    companion object {
+        private const val PREFIX = "unlocked_"
+
+        /**
+         * Tombstones for unlockables removed from the game (achievements v25).
+         * Old backups / stale DB rows may still carry these ids; they must never
+         * be granted again.
+         */
+        private val REMOVED_UNLOCKABLE_IDS = setOf(
+            "theme_achievement_gold",
+            "theme_achievement_sapphire",
+        )
+    }
+
+    /**
+     * Check if an unlockable is unlocked
+     */
+    fun isUnlockableUnlocked(unlockableId: String): Boolean {
+        return preferences.getBoolean("$PREFIX$unlockableId", false)
+    }
+
+    /**
+     * Mark an unlockable as unlocked
+     */
+    fun setUnlockableUnlocked(unlockableId: String) {
+        preferences.edit(commit = true) {
+            putBoolean("$PREFIX$unlockableId", true)
+        }
+        logcat(LogPriority.INFO) { "Unlockable unlocked: $unlockableId" }
+    }
+
+    /**
+     * Remove a previously granted unlockable (legacy cleanup).
+     */
+    fun removeUnlockable(unlockableId: String) {
+        val key = "$PREFIX$unlockableId"
+        if (preferences.contains(key)) {
+            preferences.edit(commit = true) {
+                remove(key)
+            }
+            logcat(LogPriority.INFO) { "Unlockable removed: $unlockableId" }
+        }
+    }
+
+    /**
+     * Get all unlocked unlockables
+     */
+    fun getUnlockedUnlockables(): Set<String> {
+        val allKeys = preferences.all.keys
+        return allKeys
+            .filter { it.startsWith(PREFIX) }
+            .filter { preferences.getBoolean(it, false) }
+            .map { it.removePrefix(PREFIX) }
+            .toSet()
+    }
+
+    /**
+     * Observe all unlocked unlockables as a reactive Flow.
+     * Emits a new set whenever any unlockable pref changes.
+     */
+    fun observeUnlockedUnlockables(): Flow<Set<String>> = callbackFlow {
+        fun snapshot(): Set<String> {
+            val allKeys = preferences.all.keys
+            return allKeys
+                .filter { it.startsWith(PREFIX) }
+                .filter { preferences.getBoolean(it, false) }
+                .map { it.removePrefix(PREFIX) }
+                .toSet()
+        }
+        // Emit current state immediately.
+        trySend(snapshot())
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == null || key.startsWith(PREFIX)) {
+                trySend(snapshot())
+            }
+        }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }.distinctUntilChanged()
+
+    /**
+     * Unlock rewards for an achievement
+     * Called when an achievement is unlocked
+     */
+    suspend fun unlockAchievementRewards(achievement: Achievement) {
+        // Unlock main unlockable if exists
+        achievement.unlockableId?.let { unlockableId ->
+            if (unlockableId in REMOVED_UNLOCKABLE_IDS) return@let
+            setUnlockableUnlocked(unlockableId)
+            // Apply the unlockable effect
+            applyUnlockable(unlockableId)
+        }
+
+        // Unlock all rewards in the rewards list
+        achievement.rewards?.forEach { reward ->
+            if (reward.id in REMOVED_UNLOCKABLE_IDS) return@forEach
+            setUnlockableUnlocked(reward.id)
+            applyUnlockable(reward.id)
+        }
+    }
+
+    /**
+     * Apply an unlockable effect
+     * This handles themes, badges, display preferences, etc.
+     */
+    private suspend fun applyUnlockable(unlockableId: String) = withContext(Dispatchers.Default) {
+        when {
+            // Theme unlockables are also mirrored into UserProfile because the
+            // theme picker reads profile themes in addition to Treasury prefs.
+            unlockableId.startsWith("theme_") -> {
+                val themeId = unlockableId.removePrefix("theme_")
+                try {
+                    userProfileManager.unlockTheme(themeId)
+                } catch (e: Exception) {
+                    logcat(LogPriority.ERROR) { "Failed to unlock theme $themeId: ${e.message}" }
+                }
+            }
+
+            // Badges are also mirrored into UserProfile for profile screens.
+            unlockableId.startsWith("badge_") -> {
+                val badgeName = unlockableId.removePrefix("badge_")
+                try {
+                    userProfileManager.addBadge(badgeName)
+                } catch (e: Exception) {
+                    logcat(LogPriority.ERROR) { "Failed to add badge $badgeName: ${e.message}" }
+                }
+            }
+
+            unlockableId.startsWith("aura_") -> {
+                logcat(LogPriority.INFO) { "Aura unlocked: $unlockableId" }
+            }
+
+            unlockableId.startsWith("title_") -> {
+                logcat(LogPriority.INFO) { "Profile title unlocked: $unlockableId" }
+            }
+
+            unlockableId.startsWith("display_") -> {
+                logcat(LogPriority.INFO) { "Display preference unlocked: $unlockableId" }
+            }
+
+            unlockableId.startsWith("profile_") -> {
+                logcat(LogPriority.INFO) { "Profile reward unlocked: $unlockableId" }
+            }
+
+            unlockableId.startsWith("avatar_") -> {
+                logcat(LogPriority.INFO) { "Avatar reward unlocked: $unlockableId" }
+            }
+
+            unlockableId.startsWith("reader_") -> {
+                logcat(LogPriority.INFO) { "Reader preset unlocked: $unlockableId" }
+            }
+
+            unlockableId.startsWith("home_") -> {
+                logcat(LogPriority.INFO) { "Home preset unlocked: $unlockableId" }
+            }
+
+            unlockableId.startsWith("special_") -> {
+                logcat(LogPriority.INFO) { "Special visual reward unlocked: $unlockableId" }
+            }
+
+            else -> {
+                logcat(LogPriority.WARN) { "Unknown unlockable type: $unlockableId" }
+            }
+        }
+    }
+
+    /**
+     * Check if a theme is available (unlocked)
+     */
+    fun isThemeAvailable(themeId: String): Boolean {
+        val normalizedThemeId = themeId.removePrefix("theme_")
+        val canonicalThemeId = normalizedThemeId.uppercase()
+        val unlockableId = "theme_$normalizedThemeId"
+
+        if (isDefaultUnlockable(unlockableId)) return true
+        if (preferences.getBoolean("debug_bypass_treasury_locks", false)) return true
+
+        return isUnlockableUnlocked(unlockableId) ||
+            isUnlockableUnlocked("theme_$canonicalThemeId") ||
+            isUnlockableUnlocked("theme_${canonicalThemeId.lowercase()}")
+    }
+
+    /**
+     * Check if a badge is available (unlocked)
+     */
+    fun isBadgeAvailable(badgeId: String): Boolean {
+        val unlockableId = if (badgeId.startsWith("badge_")) badgeId else "badge_$badgeId"
+        if (isDefaultUnlockable(unlockableId)) return true
+        if (preferences.getBoolean("debug_bypass_treasury_locks", false)) return true
+        return isUnlockableUnlocked(unlockableId)
+    }
+
+    /**
+     * Check if a display preference is available (unlocked)
+     */
+    fun isDisplayPreferenceAvailable(prefId: String): Boolean {
+        val unlockableId = if (prefId.startsWith("display_")) prefId else "display_$prefId"
+        if (isDefaultUnlockable(unlockableId)) return true
+        if (preferences.getBoolean("debug_bypass_treasury_locks", false)) return true
+        return isUnlockableUnlocked(unlockableId)
+    }
+
+    /**
+     * Generic availability check for Treasury cosmetics. UI should prefer this
+     * method for aura/profile/avatar/home/special unlockables so all reward
+     * types use the same source of truth.
+     */
+    fun isUnlockableAvailable(unlockableId: String): Boolean {
+        if (isDefaultUnlockable(unlockableId)) return true
+        if (preferences.getBoolean("debug_bypass_treasury_locks", false)) return true
+        return isUnlockableUnlocked(unlockableId)
+    }
+
+    private fun isDefaultUnlockable(unlockableId: String): Boolean {
+        return unlockableId.startsWith("default_") ||
+            unlockableId.startsWith("theme_default_") ||
+            unlockableId.startsWith("badge_default_") ||
+            unlockableId.startsWith("display_default_")
+    }
+
+    /**
+     * Get unlockable display name (localized) as a StringResource.
+     */
+    fun getUnlockableNameRes(unlockableId: String): StringResource? {
+        return when (unlockableId) {
+            // Themes
+            "theme_master" -> MR.strings.unlockable_theme_master
+            "theme_ONYX_GOLD" -> MR.strings.unlockable_theme_ONYX_GOLD
+            "theme_SAKURA_NOIR" -> MR.strings.unlockable_theme_SAKURA_NOIR
+            "theme_NEBULA_TIDE" -> MR.strings.unlockable_theme_NEBULA_TIDE
+            "theme_EVENT_HORIZON" -> MR.strings.unlockable_theme_EVENT_HORIZON
+            "theme_void_red" -> MR.strings.unlockable_theme_void_red
+            "theme_AURORA_PRIME" -> MR.strings.unlockable_theme_AURORA_PRIME
+            "theme_LATTICE_PROTOCOL" -> MR.strings.unlockable_theme_LATTICE_PROTOCOL
+
+            // Badges
+            "badge_achievement_master" -> MR.strings.unlockable_badge_achievement_master
+            "badge_week_warrior" -> MR.strings.unlockable_badge_week_warrior
+
+            // Display preferences
+            "display_grid_large" -> MR.strings.unlockable_display_grid_large
+            "display_list_compact" -> MR.strings.unlockable_display_list_compact
+            "display_grid_extra_large" -> MR.strings.unlockable_display_grid_extra_large
+
+            // Auras
+            "aura_harem" -> MR.strings.unlockable_aura_harem
+            "aura_level_up" -> MR.strings.unlockable_aura_level_up
+            "aura_matrix" -> MR.strings.unlockable_aura_matrix
+            "aura_trinity_orbit" -> MR.strings.unlockable_aura_trinity_orbit
+            "aura_deep_focus" -> MR.strings.unlockable_aura_deep_focus
+            "aura_shadow_monarch" -> MR.strings.unlockable_aura_shadow_monarch
+            "aura_ascendant_gold" -> MR.strings.unlockable_aura_ascendant_gold
+            "aura_void_broadcast_red" -> MR.strings.unlockable_aura_void_broadcast_red
+
+            // Profile presets
+            "profile_nickname_effect_aurora_crown" -> MR.strings.unlockable_profile_nickname_effect_aurora_crown
+            "profile_nickname_effect_glitch_rune" -> MR.strings.unlockable_profile_nickname_effect_glitch_rune
+            "profile_nickname_effect_cipher" -> MR.strings.unlockable_profile_nickname_effect_cipher
+            "profile_nickname_effect_glitch_rune_red" -> MR.strings.unlockable_profile_nickname_effect_glitch_rune_red
+
+            // Avatar presets
+            "avatar_frame_neon" -> MR.strings.unlockable_avatar_frame_neon
+            "avatar_frame_hologram" -> MR.strings.unlockable_avatar_frame_hologram
+            "avatar_frame_prismatic" -> MR.strings.unlockable_avatar_frame_prismatic
+            "avatar_frame_glitch_red" -> MR.strings.unlockable_avatar_frame_glitch_red
+
+            // Home presets
+            "home_badge_orbit" -> MR.strings.unlockable_home_badge_orbit
+            "home_badge_crown" -> MR.strings.unlockable_home_badge_crown
+            "home_badge_shuriken" -> MR.strings.unlockable_home_badge_shuriken
+
+            // Special visual rewards
+            "special_background_petal_storm" -> MR.strings.unlockable_special_background_petal_storm
+            "special_background_neon_orbit" -> MR.strings.unlockable_special_background_neon_orbit
+            "special_background_event_horizon_library" -> MR.strings.unlockable_special_background_event_horizon_library
+            "special_background_void_weeping_red" -> MR.strings.unlockable_special_background_void_weeping_red
+            "special_tab_glow" -> MR.strings.unlockable_special_tab_glow
+            "special_navbar_aurora_celestial" -> MR.strings.unlockable_special_navbar_aurora_celestial
+            "special_navbar_lattice_circuit" -> MR.strings.unlockable_special_navbar_lattice_circuit
+            else -> null
+        }
+    }
+
+    /**
+     * Get unlockable display name fallback string.
+     */
+    fun getUnlockableName(unlockableId: String): String {
+        return unlockableId
+            .removePrefix("theme_")
+            .removePrefix("aura_")
+            .removePrefix("title_")
+            .removePrefix("special_background_")
+            .removePrefix("special_")
+            .removePrefix("profile_nickname_effect_")
+            .removePrefix("avatar_frame_")
+            .removePrefix("home_badge_")
+            .replace("_", " ")
+            .capitalize()
+    }
+
+    /**
+     * Get unlockable type (theme, badge, display, etc.)
+     */
+    fun getUnlockableType(unlockableId: String): UnlockableType {
+        return when {
+            unlockableId.startsWith("theme_") -> UnlockableType.THEME
+            unlockableId.startsWith("aura_") -> UnlockableType.AURA
+            unlockableId.startsWith("title_") -> UnlockableType.TITLE
+            unlockableId.startsWith("badge_") -> UnlockableType.BADGE
+            unlockableId.startsWith("display_") -> UnlockableType.DISPLAY
+            unlockableId.startsWith("profile_") -> UnlockableType.PROFILE
+            unlockableId.startsWith("avatar_") -> UnlockableType.AVATAR
+            unlockableId.startsWith("reader_") -> UnlockableType.READER
+            unlockableId.startsWith("home_") -> UnlockableType.HOME
+            unlockableId.startsWith("special_") -> UnlockableType.SPECIAL
+            else -> UnlockableType.UNKNOWN
+        }
+    }
+
+    /**
+     * Reset all unlockables (for testing/debugging)
+     */
+    fun resetAllUnlockables() {
+        val allKeys = preferences.all.keys.filter { it.startsWith(PREFIX) }
+        preferences.edit {
+            allKeys.forEach { remove(it) }
+        }
+        logcat(LogPriority.INFO) { "All unlockables reset" }
+    }
+
+    /**
+     * Rebuild unlockable prefs from the current set of unlocked achievements.
+     * Clears all existing prefs first, then re-derives them from DB state.
+     * Use after any operation that might cause DB ↔ prefs desync.
+     */
+    suspend fun recomputeUnlockablesFromUnlockedAchievements(
+        unlockedAchievements: List<Achievement>,
+    ) {
+        resetAllUnlockables()
+        unlockedAchievements.forEach { achievement ->
+            unlockAchievementRewards(achievement)
+        }
+        logcat(LogPriority.INFO) {
+            "Recomputed unlockables from ${unlockedAchievements.size} unlocked achievement(s)"
+        }
+    }
+
+    /**
+     * Lock the unlockables derived from a single achievement.
+     * Used when sanitization invalidates an unlock that had no real history.
+     */
+    fun lockUnlockablesForAchievement(achievement: Achievement) {
+        achievement.unlockableId?.let { unlockableId ->
+            preferences.edit { remove("$PREFIX$unlockableId") }
+            removeUnlockableFromProfile(unlockableId)
+        }
+        achievement.rewards?.forEach { reward ->
+            preferences.edit { remove("$PREFIX${reward.id}") }
+            removeUnlockableFromProfile(reward.id)
+        }
+        logcat(LogPriority.INFO) {
+            "Locked unlockables for achievement: ${achievement.id}"
+        }
+    }
+
+    private fun removeUnlockableFromProfile(unlockableId: String) {
+        scope.launch {
+            try {
+                when {
+                    unlockableId.startsWith("theme_") -> {
+                        userProfileManager.removeTheme(unlockableId.removePrefix("theme_"))
+                    }
+                    unlockableId.startsWith("badge_") -> {
+                        userProfileManager.removeBadge(unlockableId.removePrefix("badge_"))
+                    }
+                }
+            } catch (e: Exception) {
+                logcat(LogPriority.ERROR) {
+                    "Failed to remove unlockable $unlockableId from profile: ${e.message}"
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Types of unlockables
+ */
+enum class UnlockableType {
+    THEME,
+    AURA,
+    TITLE,
+    BADGE,
+    DISPLAY,
+    PROFILE,
+    AVATAR,
+    READER,
+    HOME,
+    SPECIAL,
+    UNKNOWN,
+}
+
+private inline fun SharedPreferences.edit(
+    commit: Boolean = false,
+    action: SharedPreferences.Editor.() -> Unit,
+) {
+    val editor = edit()
+    action(editor)
+    if (commit) {
+        editor.commit()
+    } else {
+        editor.apply()
+    }
+}
+
+private fun String.capitalize(): String {
+    return this.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+}

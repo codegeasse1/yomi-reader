@@ -1,0 +1,185 @@
+package eu.kanade.domain.ui
+
+import eu.kanade.domain.ui.model.AppTheme
+import eu.kanade.domain.ui.model.BottomNavAppearance
+import eu.kanade.domain.ui.model.EInkProfile
+import eu.kanade.domain.ui.model.EInkThemeMode
+import eu.kanade.domain.ui.model.EpisodeListDensity
+import eu.kanade.domain.ui.model.NavStyle
+import eu.kanade.domain.ui.model.NavTransitionMode
+import eu.kanade.domain.ui.model.StartScreen
+import eu.kanade.domain.ui.model.TabletUiMode
+import eu.kanade.domain.ui.model.ThemeMode
+import tachiyomi.core.common.preference.PreferenceStore
+import tachiyomi.core.common.preference.getEnum
+import tachiyomi.domain.metadata.model.MetadataSource
+import tachiyomi.presentation.core.util.HapticFeedbackMode
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import java.util.Locale
+
+class UiPreferences(
+    private val preferenceStore: PreferenceStore,
+) {
+
+    fun themeMode() = preferenceStore.getEnum("pref_theme_mode_key", ThemeMode.SYSTEM)
+
+    fun appTheme() = preferenceStore.getEnum(
+        "pref_app_theme",
+        AppTheme.AURORA,
+    )
+
+    fun themeDarkAmoled() = preferenceStore.getBoolean("pref_theme_dark_amoled_key", false)
+
+    fun meltdownStage() = preferenceStore.getInt("pref_meltdown_stage", 0)
+
+    fun relativeTime() = preferenceStore.getBoolean("relative_time_v2", true)
+
+    fun dateFormat() = preferenceStore.getString("app_date_format", "")
+
+    fun tabletUiMode() = preferenceStore.getEnum("tablet_ui_mode", TabletUiMode.AUTOMATIC)
+
+    fun startScreen() = preferenceStore.getEnum("start_screen", StartScreen.HOME)
+
+    fun showAnimeSection() = preferenceStore.getBoolean("aurora_show_anime_section", true)
+    fun showMangaSection() = preferenceStore.getBoolean("aurora_show_manga_section", true)
+    fun showNovelSection() = preferenceStore.getBoolean("aurora_show_novel_section", true)
+
+    fun hideFeedTab() = preferenceStore.getBoolean("hide_feed_tab", false)
+    fun feedTabInFront() = preferenceStore.getBoolean("feed_tab_position", false)
+
+    fun showMangaScanlatorBranches() = preferenceStore.getBoolean("show_manga_scanlator_branches", true)
+
+    fun auroraLibraryImmersiveMode() = preferenceStore.getBoolean(
+        "aurora_library_immersive_mode",
+        false,
+    )
+
+    fun auroraLibrarySwipeSwitchesCategories() = preferenceStore.getBoolean(
+        "aurora_library_swipe_switches_categories",
+        false,
+    )
+
+    fun libraryUpdatePacingTimeoutSeconds() = preferenceStore.getInt(
+        "library_update_pacing_timeout_seconds",
+        0,
+    )
+
+    fun libraryUpdatePacingSourceKeys() = preferenceStore.getStringSet(
+        "library_update_pacing_source_keys",
+        emptySet(),
+    )
+
+    fun entryAutoJumpToNextAnime() = preferenceStore.getBoolean("entry_auto_jump_to_next_anime", false)
+
+    fun entryAutoJumpToNextManga() = preferenceStore.getBoolean("entry_auto_jump_to_next_manga", false)
+
+    fun entryAutoJumpToNextNovel() = preferenceStore.getBoolean("entry_auto_jump_to_next_novel", false)
+
+    fun bottomNavAppearance() = preferenceStore.getEnum("bottom_nav_appearance", BottomNavAppearance.Aurora)
+
+    fun episodeListDensity() = preferenceStore.getEnum("episode_list_density", EpisodeListDensity.Comfortable)
+
+    fun navStyle() = preferenceStore.getEnum("bottom_rail_nav_style", NavStyle.MOVE_HISTORY_TO_MORE)
+
+    fun hapticFeedbackMode() = preferenceStore.getEnum(
+        "haptic_feedback_mode",
+        HapticFeedbackMode.PARTIAL,
+    )
+
+    fun navigationTransitionMode() = preferenceStore.getEnum(
+        "navigation_transition_mode",
+        NavTransitionMode.MODERN,
+    )
+
+    /**
+     * Source for external metadata (posters, ratings, type, status).
+     * Default is NONE (Off).
+     */
+    fun metadataSource() = preferenceStore.getEnum(
+        "anime_metadata_source",
+        MetadataSource.NONE,
+    )
+
+    @Deprecated("Use metadataSource() instead", ReplaceWith("metadataSource()"))
+    fun animeMetadataSource() = metadataSource()
+
+    /**
+     * Whether the metadata authentication hint has been shown.
+     * Used to show the hint only once.
+     */
+    fun metadataAuthHintShown() = preferenceStore.getBoolean("metadata_auth_hint_shown", false)
+
+    @Deprecated("Use animeMetadataSource() instead", ReplaceWith("animeMetadataSource()"))
+    fun useShikimoriRating() = preferenceStore.getBoolean("use_shikimori_rating", true)
+
+    @Deprecated("Use animeMetadataSource() instead", ReplaceWith("animeMetadataSource()"))
+    fun useShikimoriCovers() = preferenceStore.getBoolean("use_shikimori_covers", true)
+
+    fun showOriginalTitle() = preferenceStore.getBoolean("show_original_title", true)
+
+    fun auroraEntryTranslationEnabled() = preferenceStore.getBoolean(
+        "aurora_entry_translation_enabled",
+        false,
+    )
+
+    fun auroraEntryTranslationSourceLanguages() = preferenceStore.getStringSet(
+        "aurora_entry_translation_source_languages",
+        emptySet(),
+    )
+
+    fun showAchievementNotifications() = preferenceStore.getBoolean("show_achievement_notifications", true)
+
+    fun showTabGlow() = preferenceStore.getBoolean("show_tab_glow", false)
+
+    fun showCelestialNavbar() = preferenceStore.getBoolean("show_celestial_navbar", false)
+
+    fun showCircuitNavbar() = preferenceStore.getBoolean("show_circuit_navbar", false)
+
+    fun animatedAuroraBackground() = preferenceStore.getBoolean("animated_aurora_background", true)
+
+    fun auroraDarkRimLightEnabled() = preferenceStore.getBoolean("aurora_dark_rim_light_enabled", true)
+
+    fun disableHomeHeaderScrollHide() = preferenceStore.getBoolean(
+        "disable_home_header_scroll_hide",
+        false,
+    )
+
+    fun specialBackgroundStyle() = preferenceStore.getString("special_background_style", "none")
+
+    fun eInkProfile() = preferenceStore.getEnum("e_ink_profile", EInkProfile.OFF)
+
+    fun eInkThemeMode() = preferenceStore.getEnum("e_ink_theme_mode", EInkThemeMode.SYSTEM)
+
+    fun eInkAutoOptimization() = preferenceStore.getBoolean("e_ink_auto_optimization", false)
+
+    fun appUiFontId() = preferenceStore.getString("app_ui_font_id", DEFAULT_APP_UI_FONT_ID)
+
+    fun coverTitleFontId() = preferenceStore.getString("cover_title_font_id", DEFAULT_COVER_TITLE_FONT_ID)
+
+    fun enabledAuras() = preferenceStore.getStringSet("enabled_auras", emptySet())
+
+    fun debugBypassTreasuryLocks() = preferenceStore.getBoolean("debug_bypass_treasury_locks", false)
+
+    fun showSeasonTabs() = preferenceStore.getBoolean("show_season_tabs", true)
+
+    fun alwaysShowFullEpisodeList() = preferenceStore.getBoolean("always_show_full_episode_list", false)
+
+    fun alwaysShowFullChapterListManga() = preferenceStore.getBoolean("always_show_full_chapter_list_manga", false)
+
+    fun alwaysShowFullChapterListNovel() = preferenceStore.getBoolean("always_show_full_chapter_list_novel", false)
+
+    fun entrySuggestionsExpandInline() = preferenceStore.getBoolean("entry_suggestions_expand_inline", true)
+
+    fun entrySuggestionsInOverflow() = preferenceStore.getBoolean("entry_suggestions_in_overflow", false)
+
+    companion object {
+        const val DEFAULT_APP_UI_FONT_ID = ""
+        const val DEFAULT_COVER_TITLE_FONT_ID = ""
+
+        fun dateFormat(format: String): DateTimeFormatter = when (format) {
+            "" -> DateTimeFormatter.ofLocalizedDate(FormatStyle.SHORT)
+            else -> DateTimeFormatter.ofPattern(format, Locale.getDefault())
+        }
+    }
+}

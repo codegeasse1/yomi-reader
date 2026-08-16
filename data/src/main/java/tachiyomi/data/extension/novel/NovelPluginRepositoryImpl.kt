@@ -1,0 +1,81 @@
+package tachiyomi.data.extension.novel
+
+import kotlinx.coroutines.flow.Flow
+import tachiyomi.data.handlers.novel.NovelDatabaseHandler
+import tachiyomi.domain.extension.novel.model.NovelPlugin
+import tachiyomi.domain.extension.novel.repository.NovelPluginRepository
+
+class NovelPluginRepositoryImpl(
+    private val handler: NovelDatabaseHandler,
+) : NovelPluginRepository {
+    override fun subscribeAll(): Flow<List<NovelPlugin.Installed>> {
+        return handler.subscribeToList { db -> db.novel_pluginsQueries.findAll(::mapPlugin) }
+    }
+
+    override suspend fun getAll(): List<NovelPlugin.Installed> {
+        return handler.awaitList { db -> db.novel_pluginsQueries.findAll(::mapPlugin) }
+    }
+
+    override suspend fun getById(id: String): NovelPlugin.Installed? {
+        return handler.awaitOneOrNull { db -> db.novel_pluginsQueries.findOne(id, ::mapPlugin) }
+    }
+
+    override suspend fun upsert(plugin: NovelPlugin.Installed) {
+        handler.await { db ->
+            db.novel_pluginsQueries.upsert(
+                id = plugin.id,
+                name = plugin.name,
+                site = plugin.site,
+                lang = plugin.lang,
+                version = plugin.versionCode.toLong(),
+                url = plugin.url,
+                icon_url = plugin.iconUrl,
+                custom_js = plugin.customJs,
+                custom_css = plugin.customCss,
+                has_settings = if (plugin.hasSettings) 1L else 0L,
+                sha256 = plugin.sha256,
+                repo_url = plugin.repoUrl,
+                repo_name = plugin.repoName,
+                version_name = plugin.versionName,
+            )
+        }
+    }
+
+    override suspend fun delete(id: String) {
+        handler.await { db -> db.novel_pluginsQueries.delete(id) }
+    }
+
+    private fun mapPlugin(
+        id: String,
+        name: String,
+        site: String,
+        lang: String,
+        version: Long,
+        url: String,
+        icon_url: String?,
+        custom_js: String?,
+        custom_css: String?,
+        has_settings: Long,
+        sha256: String,
+        repo_url: String,
+        repo_name: String?,
+        version_name: String?,
+    ): NovelPlugin.Installed {
+        return NovelPlugin.Installed(
+            id = id,
+            name = name,
+            site = site,
+            lang = lang,
+            versionCode = version.toInt(),
+            versionName = version_name ?: version.toString(),
+            url = url,
+            iconUrl = icon_url,
+            customJs = custom_js,
+            customCss = custom_css,
+            hasSettings = has_settings != 0L,
+            sha256 = sha256,
+            repoUrl = repo_url,
+            repoName = repo_name,
+        )
+    }
+}

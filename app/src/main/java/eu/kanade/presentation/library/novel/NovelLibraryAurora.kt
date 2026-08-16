@@ -1,0 +1,1038 @@
+package eu.kanade.presentation.library.novel
+
+import android.content.res.Configuration
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
+import eu.kanade.domain.ui.UiPreferences
+import eu.kanade.presentation.components.AuroraCard
+import eu.kanade.presentation.components.AuroraTabRow
+import eu.kanade.presentation.components.LocalTabState
+import eu.kanade.presentation.components.rememberAuroraCoverPlaceholderPainter
+import eu.kanade.presentation.components.resolveAuroraCardOverlaySpec
+import eu.kanade.presentation.components.resolveAuroraCoverModel
+import eu.kanade.presentation.entries.components.AuroraEntryDropdownMenu
+import eu.kanade.presentation.entries.components.AuroraEntryDropdownMenuItem
+import eu.kanade.presentation.entries.components.aurora.rememberAuroraPosterColorFilter
+import eu.kanade.presentation.library.AURORA_LARGE_GRID_PERFORMANCE_THRESHOLD
+import eu.kanade.presentation.library.components.EntryCompactGridItem
+import eu.kanade.presentation.library.components.GlobalSearchItem
+import eu.kanade.presentation.library.components.GlowContourLibraryGridItem
+import eu.kanade.presentation.library.components.LanguageBadge
+import eu.kanade.presentation.library.components.LazyLibraryGrid
+import eu.kanade.presentation.library.components.PinnedBadge
+import eu.kanade.presentation.library.components.PinnedSectionHeader
+import eu.kanade.presentation.library.components.UnviewedBadge
+import eu.kanade.presentation.library.components.containsAtLeastMatches
+import eu.kanade.presentation.library.components.idsToHashSet
+import eu.kanade.presentation.library.components.resolveGlowContourCornerIndicatorState
+import eu.kanade.presentation.library.components.resolveGlowContourLibraryTextSpec
+import eu.kanade.presentation.library.novel.components.SeriesStackedCoverCard
+import eu.kanade.presentation.library.novel.resolveNovelLibraryBadgeState
+import eu.kanade.presentation.library.resolveNovelLibraryCardProgressPercent
+import eu.kanade.presentation.theme.AuroraTheme
+import eu.kanade.presentation.theme.aurora.adaptive.auroraCenteredMaxWidth
+import eu.kanade.presentation.theme.aurora.adaptive.rememberAuroraAdaptiveSpec
+import eu.kanade.tachiyomi.source.model.SManga
+import tachiyomi.domain.entries.novel.model.NovelCover
+import tachiyomi.domain.entries.novel.model.asNovelCover
+import tachiyomi.domain.library.model.AuroraLibraryCardStyle
+import tachiyomi.domain.library.model.LibraryDisplayMode
+import tachiyomi.domain.library.service.LibraryPreferences
+import tachiyomi.i18n.MR
+import tachiyomi.i18n.aniyomi.AYMR
+import tachiyomi.presentation.core.components.Badge
+import tachiyomi.presentation.core.components.BadgeGroup
+import tachiyomi.presentation.core.components.FastScrollLazyColumn
+import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.presentation.core.screens.EmptyScreen
+import tachiyomi.presentation.core.util.LocalAppHaptics
+import tachiyomi.presentation.core.util.collectAsStateWithLifecycle
+import tachiyomi.presentation.core.util.plus
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.items as listItems
+
+@Composable
+fun NovelLibraryAuroraContent(
+    items: List<NovelLibraryItem>,
+    selection: List<NovelLibraryItem> = emptyList(),
+    selectedIds: Set<Long> = selection.idsToHashSet { it.id },
+    searchQuery: String?,
+    onSearchQueryChange: (String?) -> Unit,
+    onNovelClicked: (Long) -> Unit,
+    onToggleSelection: ((NovelLibraryItem) -> Unit)? = null,
+    onToggleRangeSelection: ((NovelLibraryItem) -> Unit)? = null,
+    onTogglePinned: ((NovelLibraryItem) -> Unit)? = null,
+    contentPadding: PaddingValues,
+    hasActiveFilters: Boolean,
+    onFilterClicked: () -> Unit,
+    onRefresh: () -> Unit,
+    onGlobalUpdate: () -> Unit,
+    onOpenRandomEntry: () -> Unit,
+    onGlobalSearchClicked: () -> Unit,
+    onImportEpub: () -> Unit = {},
+    onLongClickNovel: ((NovelLibraryItem) -> Unit)? = null,
+    onContinueReadingClicked: ((NovelLibraryItem) -> Unit)? = null,
+    showInlineHeader: Boolean = true,
+    libraryPreferences: LibraryPreferences,
+) {
+    val configuration = LocalConfiguration.current
+    val useSeparateDisplayModePerMedia by libraryPreferences
+        .separateDisplayModePerMedia()
+        .collectAsStateWithLifecycle()
+    val displayModePreference = remember(useSeparateDisplayModePerMedia) {
+        if (useSeparateDisplayModePerMedia) {
+            libraryPreferences.novelDisplayMode()
+        } else {
+            libraryPreferences.displayMode()
+        }
+    }
+    val displayMode by displayModePreference.collectAsStateWithLifecycle()
+    val columnPreference = remember(configuration.orientation) {
+        if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            libraryPreferences.novelLandscapeColumns()
+        } else {
+            libraryPreferences.novelPortraitColumns()
+        }
+    }
+    val columns by columnPreference.collectAsStateWithLifecycle()
+    val safeColumns = columns.coerceAtLeast(0)
+    val auroraCardStyle by libraryPreferences.auroraLibraryCardStyle().collectAsStateWithLifecycle()
+    val uiPreferences = remember { Injekt.get<UiPreferences>() }
+    val enabledAuras by uiPreferences.enabledAuras().collectAsStateWithLifecycle()
+    val useGlowContourCards = auroraCardStyle == AuroraLibraryCardStyle.GlowContour
+    val auroraAdaptiveSpec = rememberAuroraAdaptiveSpec()
+    val displaySpec = remember(displayMode, safeColumns, auroraAdaptiveSpec) {
+        resolveNovelLibraryAuroraDisplaySpec(
+            displayMode = displayMode,
+            columns = safeColumns,
+            auroraAdaptiveSpec = auroraAdaptiveSpec,
+        )
+    }
+    val useLargeGridPerformanceMode = items.size > AURORA_LARGE_GRID_PERFORMANCE_THRESHOLD
+    val showDownloadBadge by libraryPreferences.downloadBadge().collectAsStateWithLifecycle()
+    val showUnreadBadge by libraryPreferences.unreadBadge().collectAsStateWithLifecycle()
+    val showLanguageBadge by libraryPreferences.languageBadge().collectAsStateWithLifecycle()
+    val isSearchActive = searchQuery != null
+    val showPinnedSection = remember(items) { items.containsAtLeastMatches(requiredCount = 2) { it.pinned } }
+    val isSelectionMode = selection.isNotEmpty() && onToggleSelection != null
+    val onClickNovelItem: (NovelLibraryItem) -> Unit = { libraryItem ->
+        if (isSelectionMode) {
+            onToggleSelection(libraryItem)
+        } else {
+            onNovelClicked(libraryItem.id)
+        }
+    }
+    val onLongClickNovelItem: ((NovelLibraryItem) -> Unit)? = when {
+        onToggleRangeSelection != null -> onToggleRangeSelection
+        onLongClickNovel != null -> onLongClickNovel
+        else -> null
+    }
+
+    if (items.isEmpty()) {
+        val message = when {
+            !searchQuery.isNullOrEmpty() -> MR.strings.no_results_found
+            hasActiveFilters -> MR.strings.error_no_match
+            else -> MR.strings.information_no_manga_category
+        }
+
+        Column(
+            modifier = Modifier
+                .padding(contentPadding + PaddingValues(8.dp))
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (showInlineHeader) {
+                InlineNovelLibraryHeader(
+                    isSearchActive = isSearchActive,
+                    searchQuery = searchQuery.orEmpty(),
+                    onSearchQueryChange = onSearchQueryChange,
+                    onSearchClick = { onSearchQueryChange(searchQuery ?: "") },
+                    onSearchClose = { onSearchQueryChange(null) },
+                    hasActiveFilters = hasActiveFilters,
+                    onFilterClicked = onFilterClicked,
+                    onRefresh = onRefresh,
+                    onGlobalUpdate = onGlobalUpdate,
+                    onOpenRandomEntry = onOpenRandomEntry,
+                    onImportEpub = onImportEpub,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .auroraCenteredMaxWidth(auroraAdaptiveSpec.listMaxWidthDp),
+                )
+            }
+            if (!searchQuery.isNullOrEmpty()) {
+                GlobalSearchItem(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.CenterHorizontally)
+                        .auroraCenteredMaxWidth(auroraAdaptiveSpec.listMaxWidthDp),
+                    searchQuery = searchQuery,
+                    onClick = onGlobalSearchClicked,
+                )
+            }
+            EmptyScreen(
+                stringRes = message,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        return
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize(),
+    ) {
+        if (displaySpec.isList) {
+            FastScrollLazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = contentPadding + PaddingValues(
+                    horizontal = auroraAdaptiveSpec.contentHorizontalPaddingDp.dp,
+                    vertical = 12.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (showInlineHeader) {
+                    item {
+                        InlineNovelLibraryHeader(
+                            isSearchActive = isSearchActive,
+                            searchQuery = searchQuery.orEmpty(),
+                            onSearchQueryChange = onSearchQueryChange,
+                            onSearchClick = { onSearchQueryChange(searchQuery ?: "") },
+                            onSearchClose = {
+                                onSearchQueryChange(null)
+                            },
+                            hasActiveFilters = hasActiveFilters,
+                            onFilterClicked = onFilterClicked,
+                            onRefresh = onRefresh,
+                            onGlobalUpdate = onGlobalUpdate,
+                            onOpenRandomEntry = onOpenRandomEntry,
+                            onImportEpub = onImportEpub,
+                            modifier = Modifier.auroraCenteredMaxWidth(auroraAdaptiveSpec.listMaxWidthDp),
+                        )
+                    }
+                }
+
+                if (!searchQuery.isNullOrEmpty()) {
+                    item {
+                        GlobalSearchItem(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .auroraCenteredMaxWidth(auroraAdaptiveSpec.listMaxWidthDp),
+                            searchQuery = searchQuery,
+                            onClick = onGlobalSearchClicked,
+                        )
+                    }
+                }
+
+                if (showPinnedSection) {
+                    item {
+                        PinnedSectionHeader(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .auroraCenteredMaxWidth(auroraAdaptiveSpec.listMaxWidthDp),
+                        )
+                    }
+                }
+
+                listItems(
+                    items = items,
+                    key = { it.id },
+                    contentType = { "novel_library_aurora_list_item" },
+                ) { item ->
+                    val badgeState = resolveNovelLibraryBadgeState(
+                        item = item,
+                        showDownloadBadge = showDownloadBadge,
+                        downloadedNovelIds = emptySet(),
+                        showUnreadBadge = showUnreadBadge,
+                        showLanguageBadge = showLanguageBadge,
+                        sourceLanguage = item.sourceLanguage,
+                    )
+                    NovelLibraryAuroraCard(
+                        item = item,
+                        badgeState = badgeState,
+                        showMetadata = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .auroraCenteredMaxWidth(auroraAdaptiveSpec.listMaxWidthDp)
+                            .aspectRatio(2.2f),
+                        coverHeightFraction = 0.62f,
+                        onNovelClicked = { onClickNovelItem(item) },
+                        onLongClick = onLongClickNovelItem?.let { { it(item) } },
+                        onClickContinueReading = onContinueReadingClicked?.let { { it(item) } },
+                        isSelected = selectedIds.contains(item.id),
+
+                        cardStyle = AuroraLibraryCardStyle.Standard,
+                        glowDisplayMode = LibraryDisplayMode.List,
+                        gridColumns = null,
+                        onTogglePinned = onTogglePinned,
+                        enabledAuras = enabledAuras,
+                        performanceMode = useLargeGridPerformanceMode,
+                    )
+                }
+            }
+        } else {
+            LazyLibraryGrid(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .auroraCenteredMaxWidth(auroraAdaptiveSpec.listMaxWidthDp),
+                columns = safeColumns,
+                adaptiveMinCellDp = displaySpec.adaptiveMinCellDp,
+                contentPadding = contentPadding,
+            ) {
+                if (showInlineHeader) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        InlineNovelLibraryHeader(
+                            isSearchActive = isSearchActive,
+                            searchQuery = searchQuery.orEmpty(),
+                            onSearchQueryChange = onSearchQueryChange,
+                            onSearchClick = { onSearchQueryChange(searchQuery ?: "") },
+                            onSearchClose = {
+                                onSearchQueryChange(null)
+                            },
+                            hasActiveFilters = hasActiveFilters,
+                            onFilterClicked = onFilterClicked,
+                            onRefresh = onRefresh,
+                            onGlobalUpdate = onGlobalUpdate,
+                            onOpenRandomEntry = onOpenRandomEntry,
+                            onImportEpub = onImportEpub,
+                            modifier = Modifier.auroraCenteredMaxWidth(auroraAdaptiveSpec.listMaxWidthDp),
+                        )
+                    }
+                }
+
+                if (!searchQuery.isNullOrEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        GlobalSearchItem(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .auroraCenteredMaxWidth(auroraAdaptiveSpec.listMaxWidthDp),
+                            searchQuery = searchQuery,
+                            onClick = onGlobalSearchClicked,
+                        )
+                    }
+                }
+
+                if (showPinnedSection) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        PinnedSectionHeader(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .auroraCenteredMaxWidth(auroraAdaptiveSpec.listMaxWidthDp),
+                        )
+                    }
+                }
+
+                gridItems(
+                    items = items,
+                    key = { it.id },
+                    contentType = {
+                        when {
+                            displaySpec.useCompactGridEntryStyle && !useGlowContourCards -> {
+                                "novel_library_compact_grid_item"
+                            }
+                            displaySpec.showMetadata -> "novel_library_aurora_comfortable_grid_item"
+                            else -> "novel_library_aurora_cover_only_grid_item"
+                        }
+                    },
+                ) { item ->
+                    val badgeState = resolveNovelLibraryBadgeState(
+                        item = item,
+                        showDownloadBadge = showDownloadBadge,
+                        downloadedNovelIds = emptySet(),
+                        showUnreadBadge = showUnreadBadge,
+                        showLanguageBadge = showLanguageBadge,
+                        sourceLanguage = item.sourceLanguage,
+                    )
+                    if (displaySpec.useCompactGridEntryStyle && !useGlowContourCards) {
+                        NovelLibraryCompactGridItem(
+                            item = item,
+                            badgeState = badgeState,
+                            selectedIds = selectedIds,
+                            onNovelClicked = onClickNovelItem,
+                            onLongClickNovel = onLongClickNovelItem,
+                            onClickContinueReading = onContinueReadingClicked,
+                            onTogglePinned = onTogglePinned,
+                            performanceMode = useLargeGridPerformanceMode,
+                        )
+                    } else {
+                        NovelLibraryAuroraCard(
+                            item = item,
+                            badgeState = badgeState,
+                            showMetadata = displaySpec.showMetadata,
+                            modifier = if (useGlowContourCards) {
+                                Modifier
+                            } else {
+                                Modifier.aspectRatio(displaySpec.gridCardAspectRatio)
+                            },
+                            coverHeightFraction = displaySpec.gridCoverHeightFraction,
+                            onNovelClicked = { onClickNovelItem(item) },
+                            onLongClick = onLongClickNovelItem?.let { { it(item) } },
+                            onClickContinueReading = onContinueReadingClicked?.let { { it(item) } },
+                            isSelected = selectedIds.contains(item.id),
+
+                            cardStyle = auroraCardStyle,
+                            glowDisplayMode = displayMode,
+                            gridColumns = safeColumns,
+                            onTogglePinned = onTogglePinned,
+                            enabledAuras = enabledAuras,
+                            performanceMode = useLargeGridPerformanceMode,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NovelLibraryCompactGridItem(
+    item: NovelLibraryItem,
+    badgeState: NovelLibraryBadgeState,
+    selectedIds: Set<Long>,
+    onNovelClicked: (NovelLibraryItem) -> Unit,
+    onLongClickNovel: ((NovelLibraryItem) -> Unit)?,
+    onClickContinueReading: ((NovelLibraryItem) -> Unit)?,
+    onTogglePinned: ((NovelLibraryItem) -> Unit)?,
+    performanceMode: Boolean = false,
+) {
+    val placeholderPainter = rememberAuroraCoverPlaceholderPainter()
+
+    val coverData = remember(item) {
+        item.coverNovel?.asNovelCover() ?: NovelCover(
+            novelId = item.id,
+            sourceId = 0,
+            isNovelFavorite = true,
+            url = null,
+            lastModified = 0,
+        )
+    }
+
+    EntryCompactGridItem(
+        coverData = coverData,
+        title = item.title,
+        onClick = { onNovelClicked(item) },
+        onLongClick = { onLongClickNovel?.invoke(item) },
+        isSelected = selectedIds.contains(item.id),
+
+        onClickContinueViewing = if (onClickContinueReading != null && item.unreadCount > 0) {
+            { onClickContinueReading(item) }
+        } else {
+            null
+        },
+        errorPainter = placeholderPainter,
+        coverBadgeStart = {
+            if (badgeState.showDownloaded) {
+                Badge(
+                    text = stringResource(AYMR.strings.aurora_downloaded),
+                    color = MaterialTheme.colorScheme.tertiary,
+                    textColor = MaterialTheme.colorScheme.onTertiary,
+                )
+            }
+            UnviewedBadge(count = badgeState.unreadCount ?: 0L)
+        },
+        coverBadgeEnd = {
+            badgeState.language?.let {
+                LanguageBadge(
+                    isLocal = false,
+                    sourceLanguage = it,
+                )
+            }
+        },
+        topEndBadge = if (item.pinned) {
+            { PinnedBadge() }
+        } else {
+            null
+        },
+        menuContent = null,
+    )
+}
+
+internal fun resolveNovelLibraryCornerIndicatorIsFinished(status: Long): Boolean {
+    return status == SManga.COMPLETED.toLong() ||
+        status == SManga.PUBLISHING_FINISHED.toLong() ||
+        status == SManga.CANCELLED.toLong()
+}
+
+@Composable
+private fun NovelLibraryAuroraCard(
+    item: NovelLibraryItem,
+    badgeState: NovelLibraryBadgeState,
+    showMetadata: Boolean,
+    modifier: Modifier,
+    coverHeightFraction: Float,
+    onNovelClicked: () -> Unit,
+    onLongClick: (() -> Unit)?,
+    onClickContinueReading: ((NovelLibraryItem) -> Unit)?,
+    isSelected: Boolean,
+    cardStyle: AuroraLibraryCardStyle,
+    glowDisplayMode: LibraryDisplayMode,
+    gridColumns: Int?,
+    onTogglePinned: ((NovelLibraryItem) -> Unit)? = null,
+    enabledAuras: Set<String> = emptySet(),
+    performanceMode: Boolean = false,
+) {
+    val useGlowContourCards = cardStyle == AuroraLibraryCardStyle.GlowContour
+    val progressText = if (showMetadata && item.totalChapters > 0) {
+        "${item.totalChapters - item.unreadCount}/${item.totalChapters} ${stringResource(
+            MR.strings.chapters,
+        )}"
+    } else {
+        null
+    }
+    val seriesHeaderText = if (item is NovelLibraryItem.Series) {
+        stringResource(AYMR.strings.series_caption_label)
+    } else {
+        null
+    }
+    val progressPercent = resolveNovelLibraryCardProgressPercent(
+        readCount = item.readCount,
+        totalCount = item.totalChapters,
+    )
+    val textSpec = resolveGlowContourLibraryTextSpec(glowDisplayMode)
+    val cornerIndicatorState = resolveGlowContourCornerIndicatorState(
+        hasContinueAction = onClickContinueReading != null,
+        remainingCount = item.unreadCount,
+        isFinished = item.coverNovel?.let { resolveNovelLibraryCornerIndicatorIsFinished(it.status) } ?: false,
+    )
+    val coverData = remember(item.coverNovel, item.id) {
+        item.coverNovel?.asNovelCover() ?: NovelCover(
+            novelId = item.id,
+            sourceId = 0,
+            isNovelFavorite = true,
+            url = null,
+            lastModified = 0,
+        )
+    }
+    val topEndBadge: @Composable (() -> Unit)? = if (item.pinned) {
+        { PinnedBadge() }
+    } else {
+        null
+    }
+
+    if (useGlowContourCards) {
+        GlowContourLibraryGridItem(
+            modifier = modifier,
+            title = item.title,
+            subtitle = progressText,
+            coverData = coverData,
+            progressPercent = progressPercent,
+            cardAspectRatio = 0.76f,
+            cornerIndicatorState = cornerIndicatorState,
+            textSpec = textSpec,
+            genres = item.coverNovel?.genre ?: emptyList(),
+            enabledAuras = enabledAuras,
+            performanceMode = performanceMode,
+            badge = if (badgeState.hasBadge()) {
+                {
+                    NovelAuroraBadgeGroup(
+                        badgeState = badgeState,
+                        glowStyle = true,
+                    )
+                }
+            } else {
+                null
+            },
+            onClick = onNovelClicked,
+            onLongClick = onLongClick,
+            onClickContinueViewing = if (onClickContinueReading != null && item.unreadCount > 0) {
+                { onClickContinueReading(item) }
+            } else {
+                null
+            },
+            isSelected = isSelected,
+            gridColumns = gridColumns,
+            seriesHeaderText = seriesHeaderText,
+            customCover = if (item is NovelLibraryItem.Series) {
+                { SeriesStackedCoverCard(covers = item.covers, isSelected = isSelected) }
+            } else {
+                null
+            },
+            topEndBadge = topEndBadge,
+            menuContent = null,
+        )
+    } else if (showMetadata) {
+        val colors = AuroraTheme.colors
+        AuroraCard(
+            modifier = modifier,
+            title = item.title,
+            coverData = coverData,
+            subtitle = progressText,
+            coverHeightFraction = coverHeightFraction,
+            badge = if (badgeState.hasBadge()) {
+                {
+                    NovelAuroraBadgeGroup(
+                        badgeState = badgeState,
+                        glowStyle = false,
+                    )
+                }
+            } else {
+                null
+            },
+            onClick = onNovelClicked,
+            onLongClick = onLongClick,
+            onClickContinueViewing = if (onClickContinueReading != null && item.unreadCount > 0) {
+                { onClickContinueReading(item) }
+            } else {
+                null
+            },
+            isSelected = isSelected,
+            titleMaxLines = if (showMetadata) 1 else 2,
+            gridColumns = gridColumns,
+            seriesHeaderText = seriesHeaderText,
+            customCover = if (item is NovelLibraryItem.Series) {
+                { SeriesStackedCoverCard(covers = item.covers, isSelected = isSelected) }
+            } else {
+                null
+            },
+            topEndBadge = topEndBadge,
+            menuContent = null,
+        )
+    } else {
+        NovelLibraryAuroraCoverOnlyCard(
+            coverData = coverData,
+            badgeState = badgeState,
+            modifier = modifier,
+            isSelected = isSelected,
+            gridColumns = gridColumns,
+            onClickContinueViewing = if (onClickContinueReading != null && item.unreadCount > 0) {
+                { onClickContinueReading(item) }
+            } else {
+                null
+            },
+            onClick = onNovelClicked,
+            onLongClick = onLongClick,
+            customCover = if (item is NovelLibraryItem.Series) {
+                { SeriesStackedCoverCard(covers = item.covers, isSelected = isSelected) }
+            } else {
+                null
+            },
+            topEndBadge = topEndBadge,
+            menuContent = null,
+        )
+    }
+}
+
+@Composable
+private fun NovelAuroraBadgeGroup(
+    badgeState: NovelLibraryBadgeState,
+    glowStyle: Boolean,
+) {
+    val colors = AuroraTheme.colors
+    val badgeContainerColor = if (glowStyle) {
+        colors.surface.copy(alpha = 0.82f)
+    } else {
+        colors.accent
+    }
+    val badgeTextColor = if (glowStyle) {
+        colors.textPrimary
+    } else {
+        colors.textOnAccent
+    }
+
+    BadgeGroup {
+        if (badgeState.showDownloaded) {
+            Badge(
+                text = stringResource(AYMR.strings.aurora_downloaded),
+                color = badgeContainerColor,
+                textColor = badgeTextColor,
+                shape = RoundedCornerShape(4.dp),
+            )
+        }
+        badgeState.unreadCount?.let {
+            Badge(
+                text = it.toString(),
+                color = badgeContainerColor,
+                textColor = badgeTextColor,
+                shape = RoundedCornerShape(4.dp),
+            )
+        }
+        badgeState.language?.let {
+            Badge(
+                text = it.uppercase(),
+                color = badgeContainerColor,
+                textColor = badgeTextColor,
+                shape = RoundedCornerShape(4.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun NovelLibraryAuroraCoverOnlyCard(
+    coverData: Any?,
+    badgeState: NovelLibraryBadgeState,
+    modifier: Modifier,
+    isSelected: Boolean,
+    gridColumns: Int?,
+    onClickContinueViewing: (() -> Unit)?,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
+    customCover: @Composable (() -> Unit)? = null,
+    topEndBadge: @Composable (() -> Unit)? = null,
+    menuContent: (@Composable ColumnScope.(closeMenu: () -> Unit) -> Unit)? = null,
+) {
+    val colors = AuroraTheme.colors
+    val appHaptics = LocalAppHaptics.current
+    var showMenu by remember { mutableStateOf(false) }
+    val tabContainerColor = if (colors.background.luminance() < 0.5f) {
+        Color.White.copy(alpha = 0.05f)
+    } else {
+        Color(0xFFF8F9FA) // Opaque light surface — elevation shadow separates
+    }
+    val placeholderPainter = rememberAuroraCoverPlaceholderPainter()
+    Card(
+        modifier = modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = onLongClick,
+        ),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = tabContainerColor),
+        border = if (isSelected) {
+            BorderStroke(2.dp, colors.accent)
+        } else if (colors.isDark) {
+            BorderStroke(1.dp, Color.Transparent)
+        } else {
+            null // Light mode: floating shadow
+        },
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (!colors.isDark && !isSelected) 4.dp else 0.dp,
+        ),
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.1f)),
+        ) {
+            val overlaySpec = resolveAuroraCardOverlaySpec(
+                gridColumns = gridColumns,
+                cardWidthDp = maxWidth.value,
+            )
+
+            if (customCover != null) {
+                customCover()
+            } else {
+                AsyncImage(
+                    model = resolveAuroraCoverModel(coverData),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    colorFilter = rememberAuroraPosterColorFilter(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(12.dp)),
+                    error = placeholderPainter,
+                    fallback = placeholderPainter,
+                )
+            }
+
+            if (badgeState.hasBadge()) {
+                BadgeGroup(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp),
+                ) {
+                    if (badgeState.showDownloaded) {
+                        Badge(
+                            text = stringResource(AYMR.strings.aurora_downloaded),
+                            color = colors.accent,
+                            textColor = colors.textOnAccent,
+                            shape = RoundedCornerShape(4.dp),
+                        )
+                    }
+                    badgeState.unreadCount?.let {
+                        Badge(
+                            text = it.toString(),
+                            color = colors.accent,
+                            textColor = colors.textOnAccent,
+                            shape = RoundedCornerShape(4.dp),
+                        )
+                    }
+                    badgeState.language?.let {
+                        Badge(
+                            text = it.uppercase(),
+                            color = colors.accent,
+                            textColor = colors.textOnAccent,
+                            shape = RoundedCornerShape(4.dp),
+                        )
+                    }
+                }
+            }
+
+            if (topEndBadge != null || menuContent != null) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp),
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    topEndBadge?.invoke()
+
+                    if (menuContent != null) {
+                        Box {
+                            FilledIconButton(
+                                onClick = {
+                                    appHaptics.tap()
+                                    showMenu = true
+                                },
+                                modifier = Modifier.size(28.dp),
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = colors.surface.copy(alpha = 0.9f),
+                                    contentColor = colors.textPrimary,
+                                ),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.MoreVert,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+
+                            AuroraEntryDropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false },
+                            ) {
+                                menuContent { showMenu = false }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (onClickContinueViewing != null) {
+                FilledIconButton(
+                    onClick = onClickContinueViewing,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(6.dp)
+                        .size(overlaySpec.buttonSizeDp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = colors.accent.copy(alpha = 0.9f),
+                        contentColor = colors.textOnAccent,
+                    ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(overlaySpec.buttonIconSizeDp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun NovelLibraryBadgeState.hasBadge(): Boolean {
+    return showDownloaded || unreadCount != null || language != null
+}
+
+@Composable
+private fun InlineNovelLibraryHeader(
+    isSearchActive: Boolean,
+    searchQuery: String,
+    onSearchQueryChange: (String?) -> Unit,
+    onSearchClick: () -> Unit,
+    onSearchClose: () -> Unit,
+    hasActiveFilters: Boolean,
+    onFilterClicked: () -> Unit,
+    onRefresh: () -> Unit,
+    onGlobalUpdate: () -> Unit,
+    onOpenRandomEntry: () -> Unit,
+    onImportEpub: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = AuroraTheme.colors
+    val tabState = LocalTabState.current
+    var showMenu by remember { mutableStateOf(false) }
+
+    var internalQuery by remember { mutableStateOf(searchQuery) }
+    var lastCommittedQuery by remember { mutableStateOf(searchQuery) }
+
+    // Accept external query changes without clobbering unsent user input:
+    // re-initializing the field on every parent echo of our own debounced
+    // commit could erase characters typed while the commit was in flight.
+    LaunchedEffect(searchQuery) {
+        if (searchQuery != lastCommittedQuery) {
+            lastCommittedQuery = searchQuery
+            internalQuery = searchQuery
+        }
+    }
+
+    LaunchedEffect(internalQuery) {
+        if (internalQuery != lastCommittedQuery) {
+            kotlinx.coroutines.delay(eu.kanade.presentation.components.SEARCH_DEBOUNCE_MILLIS)
+            lastCommittedQuery = internalQuery
+            onSearchQueryChange(internalQuery)
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 16.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (isSearchActive) {
+                TextField(
+                    value = internalQuery,
+                    onValueChange = { value ->
+                        internalQuery = value
+                    },
+                    placeholder = {
+                        Text(
+                            text = stringResource(MR.strings.action_search),
+                            color = colors.textSecondary,
+                        )
+                    },
+                    leadingIcon = { Icon(Icons.Filled.Search, null, tint = colors.textPrimary) },
+                    trailingIcon = {
+                        IconButton(onClick = onSearchClose) {
+                            Icon(Icons.Filled.Close, null, tint = colors.textSecondary)
+                        }
+                    },
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = colors.cardBackground,
+                        unfocusedContainerColor = colors.cardBackground,
+                        focusedTextColor = colors.textPrimary,
+                        unfocusedTextColor = colors.textPrimary,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp)),
+                )
+            } else {
+                Text(
+                    text = stringResource(AYMR.strings.aurora_library),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = colors.textPrimary,
+                    fontWeight = FontWeight.Bold,
+                )
+
+                Row {
+                    IconButton(onClick = onSearchClick) {
+                        Icon(Icons.Filled.Search, null, tint = colors.textPrimary)
+                    }
+                    IconButton(onClick = onFilterClicked) {
+                        Icon(
+                            Icons.Filled.FilterList,
+                            null,
+                            tint = if (hasActiveFilters) colors.accent else colors.textSecondary,
+                        )
+                    }
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(Icons.Filled.MoreVert, null, tint = colors.textSecondary)
+                        }
+                        AuroraEntryDropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false },
+                        ) {
+                            AuroraEntryDropdownMenuItem(
+                                text = stringResource(MR.strings.action_update_library),
+                                leadingIcon = Icons.Filled.Refresh,
+                                onClick = {
+                                    onRefresh()
+                                    showMenu = false
+                                },
+                            )
+                            AuroraEntryDropdownMenuItem(
+                                text = stringResource(MR.strings.pref_category_library_update),
+                                leadingIcon = Icons.Filled.Refresh,
+                                onClick = {
+                                    onGlobalUpdate()
+                                    showMenu = false
+                                },
+                            )
+                            AuroraEntryDropdownMenuItem(
+                                text = stringResource(MR.strings.action_open_random_manga),
+                                leadingIcon = Icons.Filled.Shuffle,
+                                onClick = {
+                                    onOpenRandomEntry()
+                                    showMenu = false
+                                },
+                            )
+                            AuroraEntryDropdownMenuItem(
+                                text = stringResource(AYMR.strings.novel_library_import_epub),
+                                leadingIcon = Icons.Filled.Add,
+                                onClick = {
+                                    onImportEpub()
+                                    showMenu = false
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (tabState != null && tabState.tabs.size > 1) {
+            Spacer(Modifier.height(12.dp))
+            AuroraTabRow(
+                tabs = tabState.tabs,
+                selectedIndex = tabState.selectedIndex,
+                onTabSelected = tabState.onTabSelected,
+                scrollable = false,
+            )
+        }
+    }
+}

@@ -1,0 +1,7 @@
+-- Book mode phase 4: one-off migration of positions stored by older versions.
+--
+-- Rows written before phase 2 only carry the whole-book char_offset (and, for titles that were read
+-- in the classic reader, an encoded position in the chapter row). Both need a single conversion into
+-- the locator columns the reader now resumes from. The flag records that this conversion already ran
+-- for the row, so it never happens twice and never overwrites a real position.
+ALTER TABLE novel_books ADD COLUMN progress_migrated INTEGER NOT NULL DEFAULT 0;

@@ -1,0 +1,60 @@
+package eu.kanade.tachiyomi.data.cache
+
+import android.content.Context
+import eu.kanade.tachiyomi.util.storage.DiskUtil
+import tachiyomi.domain.entries.novel.model.Novel
+import java.io.File
+import java.io.InputStream
+
+class NovelCoverCache private constructor(
+    private val cacheDir: File,
+) {
+
+    companion object {
+        private const val COVERS_DIR = "novelcovers"
+        private const val CUSTOM_COVERS_DIR = "custom"
+    }
+
+    constructor(context: Context) : this(
+        context.getExternalFilesDir(COVERS_DIR)
+            ?: File(context.filesDir, COVERS_DIR).also { it.mkdirs() },
+    )
+
+    internal constructor(rootDir: File, createDir: Boolean) : this(
+        if (createDir) rootDir.also { it.mkdirs() } else rootDir,
+    )
+
+    fun getCoverFile(novelThumbnailUrl: String?): File? {
+        return novelThumbnailUrl?.let {
+            File(cacheDir, DiskUtil.hashKeyForDisk(it))
+        }
+    }
+
+    fun getCustomCoverFile(novelId: Long?): File {
+        return File(File(cacheDir, CUSTOM_COVERS_DIR), "$novelId.jpg")
+    }
+
+    fun setCustomCoverToCache(novel: Novel, inputStream: InputStream) {
+        val customCoverFile = getCustomCoverFile(novel.id)
+        customCoverFile.parentFile?.mkdirs()
+        customCoverFile.outputStream().use {
+            inputStream.copyTo(it)
+        }
+    }
+
+    fun deleteFromCache(novel: Novel, deleteCustomCover: Boolean = false): Int {
+        var deleted = 0
+
+        getCoverFile(novel.thumbnailUrl)?.let {
+            if (it.exists() && it.delete()) ++deleted
+        }
+
+        if (deleteCustomCover) {
+            getCustomCoverFile(novel.id).let {
+                if (it.exists() && it.delete()) ++deleted
+            }
+        }
+
+        return deleted
+    }
+}

@@ -1,0 +1,5 @@
+-- Migration v6 to v7: Persist achievement reward definitions in the DB.
+-- Older installs saved achievements with no rewards column. The new code
+-- reads/writes rewards as a JSON blob, but legacy rows must still be
+-- representable; the column is nullable so existing rows remain valid.
+ALTER TABLE achievements ADD COLUMN rewards TEXT;
