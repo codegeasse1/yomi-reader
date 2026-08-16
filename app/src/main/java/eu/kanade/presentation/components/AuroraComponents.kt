@@ -1131,7 +1131,7 @@ private fun AuroraSpecialBackgroundCanvas(
                     listOf("進撃の巨人", "鬼滅の刃", "僕のヒーローアカデミア", "呪術廻戦", "ワンピース", "鋼の錬金術師"),
                     listOf("ナルト", "BLEACH", "東京喰種", "デスノート", "ベルセルク", "寄生獣"),
                     listOf("君の名は。", "天気の子", "聲の形", "涼宮ハルヒの憂鬱", "ソードアート", "四月は君の嘘"),
-                    listOf("星海アーカイブ", "虚空写本", "古書目録", "銀河読本", "TADAMI ARCHIVE", "宙の書架"),
+                    listOf("星海アーカイブ", "虚空写本", "古書目録", "銀河読本", "YOMI ARCHIVE", "宙の書架"),
                 )
                 val coverMarks = listOf(
                     listOf("動", "幕", "光", "声"),

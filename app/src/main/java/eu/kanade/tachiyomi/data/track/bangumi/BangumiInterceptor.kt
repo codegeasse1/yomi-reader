@@ -35,7 +35,7 @@ class BangumiInterceptor(private val bangumi: Bangumi) : Interceptor {
         return originalRequest.newBuilder()
             .header(
                 "User-Agent",
-                "jmir1/Tadami/v${BuildConfig.VERSION_NAME} (Android) (https://github.com/Tadami-app/Tadami)",
+                "Yomi/v${BuildConfig.VERSION_NAME} (Android) (https://github.com/codegeasse1/yomi-reader)",
             )
             .apply {
                 addHeader("Authorization", "Bearer ${currAuth.accessToken}")

@@ -125,33 +125,6 @@ android {
     }
 
     packaging {
-        jniLibs {
-            keepDebugSymbols += listOf(
-                "libandroidx.graphics.path",
-                "libarchive-jni",
-                "libavcodec",
-                "libavdevice",
-                "libavfilter",
-                "libavformat",
-                "libavutil",
-                "libconscrypt_jni",
-                "libc++_shared",
-                "libffmpegkit_abidetect",
-                "libffmpegkit",
-                "libimagedecoder",
-                "liblibrary",
-                "libmpv",
-                "libplayer",
-                "libpostproc",
-                "libquickjs",
-                "libsqlite3x",
-                "libswresample",
-                "libswscale",
-                "libtorrserver",
-                "libxml2",
-            )
-                .map { "**/$it.so" }
-        }
         resources {
             excludes += setOf(
                 "**/*.dylib",

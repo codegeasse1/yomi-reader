@@ -1255,7 +1255,7 @@
     <string name="episode_settings">إعدادات الحلقة</string>
     <string name="season_settings">إعدادات الموسم</string>
     <string name="pref_backup_flags">خيارات النسخ الاحتياطي</string>
-    <string name="app_name_snake">tadami</string>
+    <string name="app_name_snake">yomi</string>
     <string name="cloud_sync">المزامنة السحابية</string>
     <string name="google_drive">Google Drive</string>
     <string name="pref_google_drive_sign_in">تسجيل الدخول</string>

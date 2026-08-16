@@ -1,4 +1,4 @@
-﻿package eu.kanade.presentation.browse.local
+package eu.kanade.presentation.browse.local
 
 import android.content.Context
 import kotlinx.serialization.Serializable
@@ -21,7 +21,7 @@ internal data class SecretHallSceneContent(
     val title: String,
     val subtitle: String,
     val runeDescription: String,
-    val rosterTitle: String = "Все участники Tadami",
+    val rosterTitle: String = "Все участники Yomi",
     val rosterSubtitle: String = "Летопись тех, кто оставил след.",
     val rosterOpenDescription: String = "Открыть список всех имен.",
     val rosterCloseDescription: String = "Закрыть список всех имен.",
@@ -114,19 +114,19 @@ internal fun secretHallSceneFallback(): SecretHallSceneConfig {
     return SecretHallSceneConfig(
         content = SecretHallSceneContent(
             systemLabel = "СИСТЕМА РАЗБЛОКИРОВАНА",
-            title = "Зал славы Tadami",
+            title = "Зал славы Yomi",
             subtitle =
             "К входу допущены только те, кто выдержал сигнал до конца.",
             runeDescription = "Вернуться в обычный мир.",
-            rosterTitle = "Все участники Tadami",
+            rosterTitle = "Все участники Yomi",
             rosterSubtitle = "Летопись тех, кто оставил след.",
             rosterOpenDescription = "Открыть список всех имен.",
             rosterCloseDescription = "Закрыть список всех имен.",
             systemLabelEn = "SYSTEM UNLOCKED",
-            titleEn = "Tadami Hall of Fame",
+            titleEn = "Yomi Hall of Fame",
             subtitleEn = "Only those who endured the signal to the end may enter.",
             runeDescriptionEn = "Return to the ordinary world.",
-            rosterTitleEn = "All Tadami Participants",
+            rosterTitleEn = "All Yomi Participants",
             rosterSubtitleEn = "A chronicle of those who left a mark.",
             rosterOpenDescriptionEn = "Open the full list of names.",
             rosterCloseDescriptionEn = "Close the full list of names.",
