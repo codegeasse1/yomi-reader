@@ -7,20 +7,20 @@ import androidx.compose.ui.graphics.Color
 internal object AuroraColorScheme : BaseColorScheme() {
 
     // Aniview Premium color palette
-    val aniviewElectricBlue = Color(0xFF0095FF)
-    val aniviewCyan = Color(0xFF00E5FF)
-    val aniviewPurple = Color(0xFF7C4DFF)
-    val aniviewDarkBg = Color(0xFF0F1116)
-    val aniviewSurface = Color(0xFF1A1D23)
-    val aniviewGlow = Color(0xFF0095FF)
+    val aniviewElectricBlue = Color(0xFF8B7CFF)
+    val aniviewCyan = Color(0xFF35E0FF)
+    val aniviewPurple = Color(0xFFE879F9)
+    val aniviewDarkBg = Color(0xFF0A0B16)
+    val aniviewSurface = Color(0xFF151630)
+    val aniviewGlow = Color(0xFF8B7CFF)
 
     // Legacy Aurora colors (for backwards compatibility)
     val auroraAccent = aniviewElectricBlue
-    val auroraAccentLight = Color(0xFF0076CB)
+    val auroraAccentLight = Color(0xFF5A4BCF)
 
     val auroraDarkBackground = aniviewDarkBg
     val auroraDarkSurface = aniviewSurface
-    val auroraDarkGradientStart = Color(0xFF1e1b4b)
+    val auroraDarkGradientStart = Color(0xFF241B52)
     val auroraDarkGradientEnd = aniviewDarkBg
 
     val auroraLightBackground = Color(0xFFf8fafc)
@@ -28,41 +28,41 @@ internal object AuroraColorScheme : BaseColorScheme() {
     val auroraLightGradientStart = Color(0xFFe0e7ff)
     val auroraLightGradientEnd = Color(0xFFf8fafc)
 
-    val auroraGlass = Color.White.copy(alpha = 0.22f)
+    val auroraGlass = Color.White.copy(alpha = 0.26f)
     val auroraGlassLight = Color(0x1A000000)
 
     override val darkScheme = darkColorScheme(
         primary = aniviewElectricBlue,
-        onPrimary = Color.White,
-        primaryContainer = aniviewElectricBlue.copy(alpha = 0.2f),
-        onPrimaryContainer = aniviewElectricBlue,
+        onPrimary = Color(0xFF171032),
+        primaryContainer = Color(0xFF352A7D),
+        onPrimaryContainer = Color(0xFFDED6FF),
 
         secondary = aniviewCyan,
         onSecondary = Color.Black,
-        secondaryContainer = Color(0xFF1e3a5f),
-        onSecondaryContainer = aniviewCyan,
+        secondaryContainer = Color(0xFF0F3B57),
+        onSecondaryContainer = Color(0xFFA9ECFF),
 
         tertiary = aniviewPurple,
-        onTertiary = Color.White,
-        tertiaryContainer = Color(0xFF311b92),
-        onTertiaryContainer = Color(0xFFb388ff),
+        onTertiary = Color(0xFF2A0A3F),
+        tertiaryContainer = Color(0xFF4A1D6E),
+        onTertiaryContainer = Color(0xFFF5C9FF),
 
         background = aniviewDarkBg,
-        onBackground = Color.White,
+        onBackground = Color(0xFFECEAFD),
 
         surface = aniviewSurface,
-        onSurface = Color.White,
-        surfaceVariant = Color(0xFF252931),
-        onSurfaceVariant = Color(0xFF94a3b8),
+        onSurface = Color(0xFFECEAFD),
+        surfaceVariant = Color(0xFF232542),
+        onSurfaceVariant = Color(0xFFA6A3CC),
 
-        surfaceContainerLowest = Color(0xFF0A0C0F),
-        surfaceContainerLow = Color(0xFF13151A),
+        surfaceContainerLowest = Color(0xFF0B0C1B),
+        surfaceContainerLow = Color(0xFF101225),
         surfaceContainer = aniviewSurface,
-        surfaceContainerHigh = Color(0xFF24272E),
-        surfaceContainerHighest = Color(0xFF2F3239),
+        surfaceContainerHigh = Color(0xFF1D1F40),
+        surfaceContainerHighest = Color(0xFF272A55),
 
-        outline = Color(0xFF334155),
-        outlineVariant = Color(0xFF1e293b),
+        outline = Color(0xFF3E3F6C),
+        outlineVariant = Color(0xFF2B2D55),
 
         error = Color(0xFFf87171),
         onError = Color.White,
@@ -71,7 +71,7 @@ internal object AuroraColorScheme : BaseColorScheme() {
 
         inverseSurface = Color(0xFFe2e8f0),
         inverseOnSurface = Color(0xFF1e293b),
-        inversePrimary = Color(0xFF0369a1),
+        inversePrimary = Color(0xFF6C5CE7),
 
         scrim = Color.Black,
     )

@@ -593,7 +593,7 @@ class AnimeLibraryUpdateJob(private val context: Context, workerParams: WorkerPa
         private const val WORK_NAME_AUTO = "AnimeLibraryUpdate-auto"
         private const val WORK_NAME_MANUAL = "AnimeLibraryUpdate-manual"
 
-        private const val ERROR_LOG_HELP_URL = "https://t.me/YomiSupport"
+        private const val ERROR_LOG_HELP_URL = "https://github.com/codegeasse1/yomi-reader/issues"
 
         /**
          * Key for category to update.

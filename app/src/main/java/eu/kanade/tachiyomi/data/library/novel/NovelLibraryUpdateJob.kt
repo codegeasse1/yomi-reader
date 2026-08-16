@@ -542,7 +542,7 @@ class NovelLibraryUpdateJob(
         private const val KEY_CATEGORY = "category"
         private const val KEY_ENTRY_IDS = "entryIds"
         private const val GRACE_PERIOD_DAYS = 1L
-        private const val ERROR_LOG_HELP_URL = "https://t.me/YomiSupport"
+        private const val ERROR_LOG_HELP_URL = "https://github.com/codegeasse1/yomi-reader/issues"
 
         fun cancelAllWorks(context: Context) {
             context.workManager.cancelAllWorkByTag(TAG)

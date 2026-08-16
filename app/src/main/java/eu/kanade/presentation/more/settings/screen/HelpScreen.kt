@@ -4,9 +4,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Chat
-import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
@@ -51,26 +48,6 @@ object HelpScreen : Screen() {
                     state = state,
                     contentPadding = contentPadding,
                 ) {
-                    item {
-                        TextPreferenceWidget(
-                            modifier = itemModifier,
-                            title = "Telegram Channel",
-                            subtitle = "https://t.me/YomiApp",
-                            icon = Icons.AutoMirrored.Outlined.Send,
-                            onPreferenceClick = { uriHandler.openUri("https://t.me/YomiApp") },
-                        )
-                    }
-
-                    item {
-                        TextPreferenceWidget(
-                            modifier = itemModifier,
-                            title = "Telegram Group",
-                            subtitle = "https://t.me/YomiSupport",
-                            icon = Icons.AutoMirrored.Outlined.Chat,
-                            onPreferenceClick = { uriHandler.openUri("https://t.me/YomiSupport") },
-                        )
-                    }
-
                     item {
                         TextPreferenceWidget(
                             modifier = itemModifier,
