@@ -38,6 +38,9 @@ jobs:
       - name: Check code format
         run: ./gradlew spotlessCheck
 
+      - name: Verify signing keystore
+        run: ./gradlew signingReport --console=plain
+
       - name: Build app (quick)
         if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/')
         run: ./gradlew assembleDebug --console=plain
@@ -60,8 +63,10 @@ jobs:
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: arm64-v8a-${{ github.sha }}
-          path: app/build/outputs/apk/release/app-arm64-v8a-release-unsigned.apk
+          name: yomi-release-${{ github.sha }}
+          path: |
+            app/build/outputs/apk/release/app-arm64-v8a-release.apk
+            app/build/outputs/apk/release/app-universal-release.apk
 
       - name: Upload mapping
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')

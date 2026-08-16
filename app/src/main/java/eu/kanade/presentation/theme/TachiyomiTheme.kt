@@ -37,7 +37,6 @@ import eu.kanade.presentation.theme.colorscheme.MidnightDuskColorScheme
 import eu.kanade.presentation.theme.colorscheme.MochaColorScheme
 import eu.kanade.presentation.theme.colorscheme.MonetColorScheme
 import eu.kanade.presentation.theme.colorscheme.MonochromeColorScheme
-import eu.kanade.presentation.theme.colorscheme.YomiTideColorScheme
 import eu.kanade.presentation.theme.colorscheme.NordColorScheme
 import eu.kanade.presentation.theme.colorscheme.OnyxGoldColorScheme
 import eu.kanade.presentation.theme.colorscheme.SakuraNoirColorScheme
@@ -50,6 +49,7 @@ import eu.kanade.presentation.theme.colorscheme.TidalWaveColorScheme
 import eu.kanade.presentation.theme.colorscheme.TokyoNightColorScheme
 import eu.kanade.presentation.theme.colorscheme.VoidRedColorScheme
 import eu.kanade.presentation.theme.colorscheme.YinYangColorScheme
+import eu.kanade.presentation.theme.colorscheme.YomiTideColorScheme
 import eu.kanade.presentation.theme.colorscheme.YotsubaColorScheme
 import tachiyomi.presentation.core.util.collectAsState
 import uy.kohesive.injekt.Injekt

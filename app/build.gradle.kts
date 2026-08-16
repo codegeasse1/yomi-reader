@@ -13,7 +13,23 @@ plugins {
 }
 val hasPrivateGeminiBridge = findProject(":private-gemini-bridge") != null
 
+val keystoreProps = java.util.Properties().apply {
+    val propsFile = rootProject.file("signing/keystore.properties")
+    if (propsFile.isFile) {
+        propsFile.inputStream().use { load(it) }
+    }
+}
+
 android {
+    signingConfigs {
+        create("release") {
+            storeFile = rootProject.file("signing/yomi-release.keystore")
+            storePassword = keystoreProps.getProperty("storePassword", "")
+            keyAlias = keystoreProps.getProperty("keyAlias", "yomi")
+            keyPassword = keystoreProps.getProperty("keyPassword", "")
+        }
+    }
+
     namespace = "com.yomi.reader"
 
     defaultConfig {
@@ -48,6 +64,7 @@ android {
             applicationIdSuffix = ".localdev"
             versionNameSuffix = "-${getCommitCount()}"
             isPseudoLocalesEnabled = true
+            signingConfig = signingConfigs.getByName("release")
         }
         getByName("release") {
             isMinifyEnabled = Config.enableCodeShrink
@@ -56,6 +73,8 @@ android {
             proguardFiles("proguard-android-optimize.txt", "proguard-rules.pro")
 
             buildConfigField("String", "BUILD_TIME", "\"${getBuildTime(useLastCommitTime = true)}\"")
+
+            signingConfig = signingConfigs.getByName("release")
         }
 
         val commonMatchingFallbacks = listOf(named("release").get().name)
