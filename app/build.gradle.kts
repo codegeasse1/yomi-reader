@@ -13,10 +13,13 @@ plugins {
 }
 val hasPrivateGeminiBridge = findProject(":private-gemini-bridge") != null
 
-val keystoreProps = java.util.Properties().apply {
+val keystoreProps = mutableMapOf<String, String>().apply {
     val propsFile = rootProject.file("signing/keystore.properties")
     if (propsFile.isFile) {
-        propsFile.inputStream().use { load(it) }
+        for (line in propsFile.readLines()) {
+            val eq = line.indexOf('=')
+            if (eq > 0) put(line.substring(0, eq).trim(), line.substring(eq + 1).trim())
+        }
     }
 }
 
@@ -24,9 +27,9 @@ android {
     signingConfigs {
         create("release") {
             storeFile = rootProject.file("signing/yomi-release.keystore")
-            storePassword = keystoreProps.getProperty("storePassword", "")
-            keyAlias = keystoreProps.getProperty("keyAlias", "yomi")
-            keyPassword = keystoreProps.getProperty("keyPassword", "")
+            storePassword = keystoreProps["storePassword"] ?: ""
+            keyAlias = keystoreProps["keyAlias"] ?: "yomi"
+            keyPassword = keystoreProps["keyPassword"] ?: ""
         }
     }
 
