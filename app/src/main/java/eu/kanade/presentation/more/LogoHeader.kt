@@ -15,7 +15,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -27,10 +26,6 @@ fun LogoHeader(
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val tertiaryColor = MaterialTheme.colorScheme.tertiary
-
-    val wordmarkBrush = Brush.linearGradient(
-        listOf(primaryColor, tertiaryColor),
-    )
 
     Column(
         modifier = Modifier
@@ -44,12 +39,12 @@ fun LogoHeader(
         ) {
             Text(
                 text = "YOMI",
+                color = primaryColor,
                 style = TextStyle(
                     fontSize = 30.sp,
                     fontWeight = FontWeight.ExtraBold,
                     letterSpacing = 6.sp,
                 ),
-                brush = wordmarkBrush,
             )
             Box(
                 modifier = Modifier
