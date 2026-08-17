@@ -1,0 +1,22 @@
+Yomi — NOTICE
+==============
+
+Yomi is a renamed and customized fork of the Tadami anime/manga/novel
+reader. The vast majority of the source code in this repository was
+written by the upstream projects listed below and is used under the
+Apache License 2.0. This fork renames, re-themes, and repackages their
+work; it claims no ownership of the upstream code.
+
+Upstream projects (their copyright belongs to their respective authors):
+
+  * Tadami — https://github.com/andarcanum/Tadami-Aniyomi-fork
+      by andarcanum, a fork of Aniyomi that merges the Mihon/Tachiyomi
+      manga, anime, and novel ecosystems.
+  * Aniyomi — https://github.com/aniyomiorg/aniyomi
+  * Mihon — https://github.com/mihonapp/mihon
+  * Tachiyomi — https://github.com/tachiyomiorg/tachiyomi
+
+All trademarks, project names, and logos are the property of their
+respective owners.
+
+The Yomi name, icon, and branding are specific to this fork.

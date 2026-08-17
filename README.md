@@ -8,6 +8,13 @@
   </p>
 </div>
 
+> **⚠️ Important attribution:** Yomi is a **renamed, re-themed fork** of
+> [Tadami](https://github.com/andarcanum/Tadami-Aniyomi-fork), which is itself a fork of
+> [Aniyomi](https://github.com/aniyomiorg/aniyomi) built on the
+> [Mihon](https://github.com/mihonapp/mihon) / Tachiyomi ecosystem. The app you see is
+> Tadami's code rebranded as "Yomi" with a custom dark-glass theme — the credit for
+> virtually all the engineering belongs to the upstream authors. See [Credits](#credits).
+
 ## About
 
 Yomi is a free, open-source media reader for Android that brings anime, manga, and novels (ranobe) together in one app. It ships with a modern, Aurora-styled interface and works with the Aniyomi/Mihon/Tachiyomi extension ecosystem, so existing manga, anime, and novel source repositories can be added and used as-is.
@@ -59,7 +66,34 @@ For local debug builds:
 
 ## Credits
 
-Yomi's codebase is derived from [Tadami](https://github.com/andarcanum/Tadami-Aniyomi-fork) (a fork of [Aniyomi](https://github.com/aniyomiorg/aniyomi)), which in turn builds on the [Mihon](https://github.com/mihonapp/mihon) and Tachiyomi ecosystems. This project is grateful for their work.
+Yomi is a **renamed fork** of [Tadami](https://github.com/andarcanum/Tadami-Aniyomi-fork)
+(by andarcanum), which is itself a fork of [Aniyomi](https://github.com/aniyomiorg/aniyomi),
+built on the [Mihon](https://github.com/mihonapp/mihon) and
+[Tachiyomi](https://github.com/tachiyomiorg/tachiyomi) ecosystems.
+
+This fork should be understood as follows:
+
+- **Virtually all of the code** — the readers, the MPV player, the library, the extension
+  ecosystem, the trackers, the backup system, and everything else — was written by the
+  upstream authors above.
+- **Yomi's contribution is a rebrand:** a new name, icon, splash logo, default theme
+  (dark glass UI), and various strings and UI copy. It does **not** claim authorship of
+  the upstream code.
+- The deep-link `tadami://` scheme, backup-format identifiers, and tracker OAuth
+  registrations are intentionally kept so Yomi stays compatible with the Aniyomi/Tadami
+  ecosystem and with backups made in the original apps.
+
+Upstream links:
+
+| Project | Repository |
+| --- | --- |
+| Tadami (the direct base of Yomi) | https://github.com/andarcanum/Tadami-Aniyomi-fork |
+| Aniyomi | https://github.com/aniyomiorg/aniyomi |
+| Mihon | https://github.com/mihonapp/mihon |
+| Tachiyomi | https://github.com/tachiyomiorg/tachiyomi |
+
+If you enjoy Yomi, please consider supporting the upstream projects as well. See
+[NOTICE](NOTICE) for the full attribution statement.
 
 ## Disclaimer
 
