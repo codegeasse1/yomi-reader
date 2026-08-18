@@ -304,11 +304,6 @@
             android:exported="false" />
 
         <activity
-            android:name="eu.kanade.tachiyomi.ui.webview.CloudflareWebviewActivity"
-            android:configChanges="uiMode|orientation|screenSize"
-            android:exported="false" />
-
-        <activity
             android:name="eu.kanade.tachiyomi.ui.webview.TrackerWebViewLoginActivity"
             android:configChanges="uiMode|orientation|screenSize"
             android:exported="false" />

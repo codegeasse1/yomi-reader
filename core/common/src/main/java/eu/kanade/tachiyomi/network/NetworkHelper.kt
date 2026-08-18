@@ -31,9 +31,7 @@ class NetworkHelper(
             .cookieJar(cookieJar)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
-            // Long enough to cover a visible Cloudflare captcha solve (5 min) plus the
-            // follow-up retry that carries the fresh cf_clearance cookie.
-            .callTimeout(5, TimeUnit.MINUTES)
+            .callTimeout(2, TimeUnit.MINUTES)
             .dispatcher(
                 okhttp3.Dispatcher().apply {
                     maxRequests = 64

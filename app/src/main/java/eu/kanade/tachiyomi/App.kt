@@ -75,11 +75,7 @@ import eu.kanade.tachiyomi.extension.novel.NovelPluginSourceFactory
 import eu.kanade.tachiyomi.extension.novel.runtime.NovelRuntimeCacheTrimCallbacks
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.NetworkPreferences
-import eu.kanade.tachiyomi.network.interceptor.CloudflareWebviewLauncher
-import eu.kanade.tachiyomi.network.interceptor.CloudflareWebviewLauncherHolder
-import eu.kanade.tachiyomi.network.interceptor.CloudflareWebviewSolveRegistry
 import eu.kanade.tachiyomi.ui.base.delegate.SecureActivityDelegate
-import eu.kanade.tachiyomi.ui.webview.CloudflareWebviewActivity
 import eu.kanade.tachiyomi.util.system.DeviceUtil
 import eu.kanade.tachiyomi.util.system.GLUtil
 import eu.kanade.tachiyomi.util.system.WebViewUtil
@@ -182,21 +178,6 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         // SY <--
         if (isMainProcess) {
             Injekt.importModule(AppModule(this))
-
-            // Interactive Cloudflare challenges (Turnstile captchas) are solved in a visible
-            // WebView that opens automatically and closes itself once cf_clearance is set.
-            CloudflareWebviewLauncherHolder.launcher = CloudflareWebviewLauncher { url, headers, host ->
-                val launched = try {
-                    startActivity(CloudflareWebviewActivity.newIntent(this, url, headers, host))
-                    true
-                } catch (e: Exception) {
-                    systemLogcat(LogPriority.ERROR, e) { "Failed to open Cloudflare verification screen" }
-                    false
-                }
-                if (!launched) {
-                    CloudflareWebviewSolveRegistry.report(host, false)
-                }
-            }
 
             // Setup Aurora easter egg unlock hook
             eu.kanade.domain.easteregg.aurora.AuroraEchoBus.onUnlocked = { payload ->
