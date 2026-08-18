@@ -87,6 +87,7 @@ fun AnimeExtensionScreen(
     onUpdateExtension: (AnimeExtension.Installed) -> Unit,
     onReinstallExtension: (AnimeExtension.Installed) -> Unit,
     onTrustExtension: (AnimeExtension.Untrusted) -> Unit,
+    onTrustAllExtensions: () -> Unit,
     onOpenExtension: (AnimeExtension.Installed) -> Unit,
     onClickUpdateAll: () -> Unit,
     onRefresh: () -> Unit,
@@ -141,6 +142,7 @@ fun AnimeExtensionScreen(
                     onUpdateExtension = onUpdateExtension,
                     onReinstallExtension = onReinstallExtension,
                     onTrustExtension = onTrustExtension,
+                    onTrustAllExtensions = onTrustAllExtensions,
                     onOpenExtension = onOpenExtension,
                     onClickUpdateAll = onClickUpdateAll,
                     onToggleSection = onToggleSection,
@@ -162,6 +164,7 @@ private fun AnimeExtensionContent(
     onUpdateExtension: (AnimeExtension.Installed) -> Unit,
     onReinstallExtension: (AnimeExtension.Installed) -> Unit,
     onTrustExtension: (AnimeExtension.Untrusted) -> Unit,
+    onTrustAllExtensions: () -> Unit,
     onOpenExtension: (AnimeExtension.Installed) -> Unit,
     onClickUpdateAll: () -> Unit,
     onToggleSection: (AnimeExtensionUiModel.Header.Text) -> Unit,
@@ -204,6 +207,19 @@ private fun AnimeExtensionContent(
                                     Button(onClick = { onClickUpdateAll() }) {
                                         Text(
                                             text = stringResource(MR.strings.ext_update_all),
+                                            style = LocalTextStyle.current.copy(
+                                                color = MaterialTheme.colorScheme.onPrimary,
+                                            ),
+                                        )
+                                    }
+                                }
+                            } else if (header.textRes == MR.strings.ext_installed &&
+                                items.any { it.extension is AnimeExtension.Untrusted }
+                            ) {
+                                {
+                                    Button(onClick = { onTrustAllExtensions() }) {
+                                        Text(
+                                            text = stringResource(MR.strings.ext_trust_all),
                                             style = LocalTextStyle.current.copy(
                                                 color = MaterialTheme.colorScheme.onPrimary,
                                             ),

@@ -477,6 +477,13 @@ class MangaExtensionManager(
     }
 
     /**
+     * Trusts all currently untrusted extensions at once.
+     */
+    suspend fun trustAll() {
+        untrustedExtensionsMapFlow.value.values.toList().forEach { trust(it) }
+    }
+
+    /**
      * Registers the given extension in this and the source managers.
      *
      * @param extension The extension to be registered.

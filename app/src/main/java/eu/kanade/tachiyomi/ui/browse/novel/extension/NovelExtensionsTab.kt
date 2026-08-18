@@ -85,6 +85,7 @@ fun novelExtensionsTab(
                 onUninstallExtension = { pluginToUninstall = it },
                 onUninstallUntrustedExtension = extensionsScreenModel::uninstallExtension,
                 onTrustExtension = extensionsScreenModel::trust,
+                onTrustAllExtensions = extensionsScreenModel::trustAll,
                 onUpdateAll = extensionsScreenModel::updateAllExtensions,
                 onRefresh = extensionsScreenModel::refresh,
                 onToggleSection = extensionsScreenModel::toggleSection,

@@ -555,6 +555,8 @@ class NovelExtensionsScreenModelTest {
             trustedPlugin = plugin
         }
 
+        override suspend fun trustAllPlugins() = Unit
+
         override suspend fun replacePluginFromRepo(
             installed: NovelPlugin.Installed,
             replacement: NovelPlugin.Available,

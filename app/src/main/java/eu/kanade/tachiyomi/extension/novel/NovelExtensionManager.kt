@@ -48,6 +48,8 @@ interface NovelExtensionManager {
 
     suspend fun trustPlugin(plugin: NovelPlugin.Untrusted)
 
+    suspend fun trustAllPlugins()
+
     suspend fun getSourceData(id: Long): StubNovelSource?
 
     fun getPluginIconUrlForSource(sourceId: Long): String?

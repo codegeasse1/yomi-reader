@@ -262,6 +262,17 @@ class DefaultNovelExtensionManager(
         reloadInstalledKotlinExtensions()
     }
 
+    override suspend fun trustAllPlugins() {
+        val plugins = untrustedPlugins.value.toList()
+        if (plugins.isEmpty()) return
+        val trustService = trustExtension ?: return
+        plugins.forEach { plugin ->
+            trustService.trust(plugin.pkgName, plugin.versionCode.toLong(), plugin.signatureHash)
+            enableLanguageOf(plugin)
+        }
+        reloadInstalledKotlinExtensions()
+    }
+
     override suspend fun getSourceData(id: Long): StubNovelSource? {
         installedSources.value.firstOrNull { it.id == id }?.let { source ->
             return StubNovelSource.from(source)

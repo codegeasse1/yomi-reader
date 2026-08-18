@@ -109,6 +109,7 @@ fun mangaExtensionsTab(
                 onInstallExtension = extensionsScreenModel::installExtension,
                 onOpenExtension = { navigator.push(MangaExtensionDetailsScreen(it.pkgName)) },
                 onTrustExtension = { extensionsScreenModel.trustExtension(it) },
+                onTrustAllExtensions = extensionsScreenModel::trustAllExtensions,
                 onUninstallExtension = { extensionsScreenModel.uninstallExtension(it) },
                 onUpdateExtension = extensionsScreenModel::updateExtension,
                 onReinstallExtension = { extensionToReinstall = it },

@@ -136,6 +136,8 @@ class GetNovelIncognitoStateTest {
             replacement: NovelPlugin.Available,
         ): NovelPlugin.Installed = installed
         override suspend fun trustPlugin(plugin: NovelPlugin.Untrusted) = Unit
+
+        override suspend fun trustAllPlugins() = Unit
         override suspend fun getSourceData(id: Long) = null
         override fun getPluginIconUrlForSource(sourceId: Long): String? = null
         override fun getCapabilitiesForSource(sourceId: Long): NovelPluginCapabilities? = null

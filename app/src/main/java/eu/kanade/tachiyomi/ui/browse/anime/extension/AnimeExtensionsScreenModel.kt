@@ -368,6 +368,12 @@ class AnimeExtensionsScreenModel(
         }
     }
 
+    fun trustAllExtensions() {
+        screenModelScope.launch {
+            extensionManager.trustAll()
+        }
+    }
+
     @Immutable
     data class State(
         val isLoading: Boolean = true,

@@ -434,6 +434,12 @@ class NovelExtensionsScreenModel(
         }
     }
 
+    fun trustAll() {
+        screenModelScope.launchIO {
+            extensionManager.trustAllPlugins()
+        }
+    }
+
     private fun addDownloadState(plugin: NovelPlugin, installStep: InstallStep) {
         currentDownloads.update { it + Pair(plugin.id, installStep) }
     }

@@ -172,6 +172,8 @@ class AndroidNovelSourceManagerTest {
 
         override suspend fun trustPlugin(plugin: NovelPlugin.Untrusted) = Unit
 
+        override suspend fun trustAllPlugins() = Unit
+
         override suspend fun replacePluginFromRepo(
             installed: NovelPlugin.Installed,
             replacement: NovelPlugin.Available,

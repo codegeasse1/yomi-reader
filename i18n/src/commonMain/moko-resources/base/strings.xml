@@ -439,6 +439,7 @@
     <string name="ext_installed">Installed</string>
     <string name="ext_available">Available</string>
     <string name="ext_trust">Trust</string>
+    <string name="ext_trust_all">Trust all</string>
     <string name="ext_untrusted">Untrusted</string>
     <string name="ext_uninstall">Uninstall</string>
     <string name="ext_remove">Remove</string>

@@ -174,6 +174,7 @@ fun NovelExtensionScreen(
     onUninstallExtension: (NovelPlugin.Installed) -> Unit,
     onUninstallUntrustedExtension: (NovelPlugin.Untrusted) -> Unit,
     onTrustExtension: (NovelPlugin.Untrusted) -> Unit,
+    onTrustAllExtensions: () -> Unit,
     onUpdateAll: () -> Unit,
     onRefresh: () -> Unit,
     onToggleSection: (String) -> Unit,
@@ -229,6 +230,7 @@ fun NovelExtensionScreen(
                     onUninstallExtension = onUninstallExtension,
                     onUninstallUntrustedExtension = onUninstallUntrustedExtension,
                     onTrustExtension = onTrustExtension,
+                    onTrustAllExtensions = onTrustAllExtensions,
                     onUpdateAll = onUpdateAll,
                     onToggleSection = onToggleSection,
                     onCopyDiagnostic = onCopyDiagnostic,
@@ -251,6 +253,7 @@ private fun NovelExtensionContent(
     onUninstallExtension: (NovelPlugin.Installed) -> Unit,
     onUninstallUntrustedExtension: (NovelPlugin.Untrusted) -> Unit,
     onTrustExtension: (NovelPlugin.Untrusted) -> Unit,
+    onTrustAllExtensions: () -> Unit,
     onUpdateAll: () -> Unit,
     onToggleSection: (String) -> Unit,
     onCopyDiagnostic: (NovelPlugin) -> Unit,
@@ -304,7 +307,20 @@ private fun NovelExtensionContent(
             grouped[NovelExtensionItem.Status.Untrusted].orEmpty()
         if (installed.isNotEmpty()) {
             item(key = "novel-ext-installed-header") {
-                ExtensionHeader(textRes = MR.strings.ext_installed)
+                val untrusted = grouped[NovelExtensionItem.Status.Untrusted].orEmpty()
+                ExtensionHeader(
+                    textRes = MR.strings.ext_installed,
+                    action = {
+                        if (untrusted.isNotEmpty()) {
+                            IconButton(onClick = onTrustAllExtensions) {
+                                Icon(
+                                    imageVector = Icons.Outlined.VerifiedUser,
+                                    contentDescription = stringResource(MR.strings.ext_trust_all),
+                                )
+                            }
+                        }
+                    },
+                )
             }
             val keyedInstalled = uniqueNovelExtensionItemKeys("installed", installed).zip(installed)
             items(

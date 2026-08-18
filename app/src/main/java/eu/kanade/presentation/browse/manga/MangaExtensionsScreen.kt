@@ -87,6 +87,7 @@ fun MangaExtensionScreen(
     onUpdateExtension: (MangaExtension.Installed) -> Unit,
     onReinstallExtension: (MangaExtension.Installed) -> Unit,
     onTrustExtension: (MangaExtension.Untrusted) -> Unit,
+    onTrustAllExtensions: () -> Unit,
     onOpenExtension: (MangaExtension.Installed) -> Unit,
     onClickUpdateAll: () -> Unit,
     onRefresh: () -> Unit,
@@ -141,6 +142,7 @@ fun MangaExtensionScreen(
                     onUpdateExtension = onUpdateExtension,
                     onReinstallExtension = onReinstallExtension,
                     onTrustExtension = onTrustExtension,
+                    onTrustAllExtensions = onTrustAllExtensions,
                     onOpenExtension = onOpenExtension,
                     onClickUpdateAll = onClickUpdateAll,
                     onToggleSection = onToggleSection,
@@ -162,6 +164,7 @@ private fun ExtensionContent(
     onUpdateExtension: (MangaExtension.Installed) -> Unit,
     onReinstallExtension: (MangaExtension.Installed) -> Unit,
     onTrustExtension: (MangaExtension.Untrusted) -> Unit,
+    onTrustAllExtensions: () -> Unit,
     onOpenExtension: (MangaExtension.Installed) -> Unit,
     onClickUpdateAll: () -> Unit,
     onToggleSection: (MangaExtensionUiModel.Header.Text) -> Unit,
@@ -204,6 +207,19 @@ private fun ExtensionContent(
                                     Button(onClick = { onClickUpdateAll() }) {
                                         Text(
                                             text = stringResource(MR.strings.ext_update_all),
+                                            style = LocalTextStyle.current.copy(
+                                                color = MaterialTheme.colorScheme.onPrimary,
+                                            ),
+                                        )
+                                    }
+                                }
+                            } else if (header.textRes == MR.strings.ext_installed &&
+                                items.any { it.extension is MangaExtension.Untrusted }
+                            ) {
+                                {
+                                    Button(onClick = { onTrustAllExtensions() }) {
+                                        Text(
+                                            text = stringResource(MR.strings.ext_trust_all),
                                             style = LocalTextStyle.current.copy(
                                                 color = MaterialTheme.colorScheme.onPrimary,
                                             ),
