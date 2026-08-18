@@ -100,9 +100,33 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          cat > /tmp/release-notes.md <<'EOF'
+          ## What's new
+
+          **✨ Trust all in one tap**
+          No more tapping "Trust" on every installed extension one by one. There's now a **Trust all** button that makes all your already-installed extensions work instantly with a single tap.
+
+          **⚡ Smooth, lag-free — even on low-end phones**
+          The app is optimized to run smoothly on devices with as little as 2GB of RAM. Image loading uses less memory, heavy animations are toned down on weaker devices, and the app is fully optimized — browsing your library and reading feels much more fluid.
+
+          **📥 In-app installer**
+          Extensions now install automatically in the background — no more pressing the install button and confirming over and over. Tap install once and it's done.
+
+          **🌊 New splash screen**
+          A fresh new look when the app starts up.
+
+          **🔔 Update notifications**
+          The app checks for new versions automatically and notifies you when an update is available. Download it directly from the notification, or open the GitHub release page.
+
+          ## Download
+          - **app-arm64-v8a-release.apk** — for most phones (64-bit)
+          - **app-universal-release.apk** — works on any phone
+
+          Install the APK and it updates over your existing app — no data lost.
+          EOF
           gh release create "${{ github.ref_name }}" \
             app/build/outputs/apk/release/app-arm64-v8a-release.apk \
             app/build/outputs/apk/release/app-universal-release.apk \
             --repo "${{ github.repository }}" \
             --title "Yomi ${{ github.ref_name }}" \
-            --generate-notes
+            --notes-file /tmp/release-notes.md
