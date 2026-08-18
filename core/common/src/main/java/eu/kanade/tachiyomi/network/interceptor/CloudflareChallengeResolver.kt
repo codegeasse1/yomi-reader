@@ -121,7 +121,7 @@ internal class WebViewCloudflareChallengeResolver(
             // Any challenge the headless WebView couldn't auto-solve is handed to a visible
             // WebView. Managed challenges often render their captcha only after the headless
             // probe has already finished, so trusting only the widget probe misses them.
-            if (solveVisibleChallenge(originalRequest)) {
+            if (solveVisibleChallenge(originalRequest, oldCookie)) {
                 return
             }
 
@@ -138,7 +138,7 @@ internal class WebViewCloudflareChallengeResolver(
      * (Turnstile captcha) and blocks until the user completes or abandons it. The screen closes
      * itself the moment a fresh cf_clearance cookie appears.
      */
-    private fun solveVisibleChallenge(originalRequest: Request): Boolean {
+    private fun solveVisibleChallenge(originalRequest: Request, oldCookie: Cookie?): Boolean {
         val launcher = CloudflareWebviewLauncherHolder.launcher ?: return false
         val host = originalRequest.url.host
         val future = CloudflareWebviewSolveRegistry.register(host)
@@ -165,10 +165,13 @@ internal class WebViewCloudflareChallengeResolver(
             if (!solved) {
                 CloudflareWebviewSolveRegistry.report(host, false)
             }
-            solved
+            // If the screen reported failure but a fresh clearance is in the cookie jar
+            // anyway (e.g. the user closed it at the exact moment the solve landed), the
+            // challenge actually passed - don't error out and don't annoy the user.
+            solved || hasNewCloudflareClearance(originalRequest, originalRequest.url.toString(), oldCookie)
         } catch (_: Exception) {
             CloudflareWebviewSolveRegistry.report(host, false)
-            false
+            hasNewCloudflareClearance(originalRequest, originalRequest.url.toString(), oldCookie)
         }
     }
 

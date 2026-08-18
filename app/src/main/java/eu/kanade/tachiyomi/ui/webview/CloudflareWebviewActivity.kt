@@ -35,6 +35,7 @@ import tachiyomi.presentation.core.i18n.stringResource
  */
 class CloudflareWebviewActivity : BaseActivity() {
 
+    private var url: String? = null
     private var host: String? = null
     private var reported = false
 
@@ -53,6 +54,7 @@ class CloudflareWebviewActivity : BaseActivity() {
                 finish()
                 return
             }
+        this.url = url
         host = intent.extras?.getString(HOST_KEY)
         val headers = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent.getSerializableExtra(HEADERS_KEY, HashMap::class.java) as? HashMap<String, String>
@@ -124,8 +126,15 @@ class CloudflareWebviewActivity : BaseActivity() {
     }
 
     private fun hasClearance(): Boolean {
+        val url = url ?: return false
         val host = host ?: return false
-        return (CookieManager.getInstance().getCookie(host) ?: "").contains("cf_clearance")
+        // CookieManager needs a full URL (scheme + host), not a bare hostname, or it
+        // always returns no cookies and the screen never closes itself after a solve.
+        return listOfNotNull(
+            url,
+            "https://$host",
+            "http://$host",
+        ).any { (CookieManager.getInstance().getCookie(it) ?: "").contains("cf_clearance") }
     }
 
     private fun reportSuccess() {
