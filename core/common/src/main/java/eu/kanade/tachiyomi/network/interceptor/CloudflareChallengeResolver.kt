@@ -95,7 +95,7 @@ internal class WebViewCloudflareChallengeResolver(
             createdWebView.loadUrl(origRequestUrl, headers)
         }
 
-        latch.awaitFor30Seconds()
+        latch.awaitFor8Seconds()
 
         if (!cloudflareBypassed) {
             hasInteractiveWidget = detectInteractiveWidgetSync(webview)
@@ -115,16 +115,20 @@ internal class WebViewCloudflareChallengeResolver(
         if (!cloudflareBypassed) {
             if (isWebViewOutdatedNow) {
                 context.toast(MR.strings.information_webview_outdated, Toast.LENGTH_LONG)
-            } else if (hasInteractiveWidget) {
-                // Turnstile/captcha: automatically show a visible WebView, wait for the user to
-                // complete it, and only fail if they abandon it.
-                if (solveVisibleChallenge(originalRequest)) {
-                    return
-                }
+                throw CloudflareBypassException()
+            }
+
+            // Any challenge the headless WebView couldn't auto-solve is handed to a visible
+            // WebView. Managed challenges often render their captcha only after the headless
+            // probe has already finished, so trusting only the widget probe misses them.
+            if (solveVisibleChallenge(originalRequest)) {
+                return
+            }
+
+            if (hasInteractiveWidget) {
                 context.toast(MR.strings.information_cloudflare_interactive_challenge, Toast.LENGTH_LONG)
                 throw CloudflareInteractiveChallengeException()
             }
-
             throw CloudflareBypassException()
         }
     }
@@ -216,8 +220,8 @@ internal val INTERACTIVE_WIDGET_PROBE = """
     })();
 """.trimIndent()
 
-private fun CountDownLatch.awaitFor30Seconds() {
-    await(30, TimeUnit.SECONDS)
+private fun CountDownLatch.awaitFor8Seconds() {
+    await(8, TimeUnit.SECONDS)
 }
 
 // How long the visible verification screen may stay open for a human to solve a captcha.
