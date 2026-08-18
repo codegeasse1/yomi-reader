@@ -190,7 +190,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
                     startActivity(CloudflareWebviewActivity.newIntent(this, url, headers, host))
                     true
                 } catch (e: Exception) {
-                    logcat(LogPriority.ERROR, e) { "Failed to open Cloudflare verification screen" }
+                    systemLogcat(LogPriority.ERROR, e) { "Failed to open Cloudflare verification screen" }
                     false
                 }
                 if (!launched) {
