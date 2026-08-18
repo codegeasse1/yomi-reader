@@ -394,44 +394,49 @@ internal class AnimeExtensionInstaller(private val context: Context) {
                 context.startActivity(intent)
             }
             BasePreferences.ExtensionInstaller.PRIVATE -> {
+                // Installs the extension in-app without any system dialog. File I/O runs off
+                // the main thread since this is the default installer.
                 val extensionManager = Injekt.get<AnimeExtensionManager>()
+                val pkgName = downloadIdToPkgName[downloadId]
                 val tempFile = File(context.cacheDir, "temp_$downloadId")
-
-                if (tempFile.exists() && !tempFile.delete()) {
-                    // Unlikely but just in case
-                    extensionManager.updateInstallStep(downloadId, InstallStep.Error)
-                    return
-                }
-
-                try {
-                    context.contentResolver.openInputStream(uri)?.use { input ->
-                        tempFile.outputStream().use { output ->
-                            input.copyTo(output)
+                installerScope.launch {
+                    try {
+                        if (tempFile.exists() && !tempFile.delete()) {
+                            // Unlikely but just in case
+                            extensionManager.updateInstallStep(downloadId, InstallStep.Error)
+                            return@launch
                         }
-                    }
 
-                    when (AnimeExtensionLoader.installPrivateExtensionFile(context, tempFile)) {
-                        PrivateExtensionInstallResult.Success -> {
-                            val pkgName = downloadIdToPkgName[downloadId]
-                            if (pkgName != null) {
-                                extensionManager.reloadAndRegisterExtension(pkgName)
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            tempFile.outputStream().use { output ->
+                                input.copyTo(output)
                             }
-                            extensionManager.updateInstallStep(downloadId, InstallStep.Installed)
                         }
-                        PrivateExtensionInstallResult.SignatureMismatch -> {
-                            downloadIdToPkgName[downloadId]?.let { extensionManager.reportSignatureMismatch(it) }
-                            extensionManager.updateInstallStep(downloadId, InstallStep.Error)
-                        }
-                        else -> {
-                            extensionManager.updateInstallStep(downloadId, InstallStep.Error)
-                        }
-                    }
-                } catch (e: Exception) {
-                    logcat(LogPriority.ERROR, e) { "Failed to read downloaded extension file." }
-                    extensionManager.updateInstallStep(downloadId, InstallStep.Error)
-                }
 
-                tempFile.delete()
+                        when (AnimeExtensionLoader.installPrivateExtensionFile(context, tempFile)) {
+                            PrivateExtensionInstallResult.Success -> {
+                                if (pkgName != null) {
+                                    extensionManager.reloadAndRegisterExtension(pkgName)
+                                }
+                                extensionManager.updateInstallStep(downloadId, InstallStep.Installed)
+                            }
+                            PrivateExtensionInstallResult.SignatureMismatch -> {
+                                if (pkgName != null) {
+                                    extensionManager.reportSignatureMismatch(pkgName)
+                                }
+                                extensionManager.updateInstallStep(downloadId, InstallStep.Error)
+                            }
+                            else -> {
+                                extensionManager.updateInstallStep(downloadId, InstallStep.Error)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        logcat(LogPriority.ERROR, e) { "Failed to read downloaded extension file." }
+                        extensionManager.updateInstallStep(downloadId, InstallStep.Error)
+                    } finally {
+                        tempFile.delete()
+                    }
+                }
             }
             else -> {
                 val intent =

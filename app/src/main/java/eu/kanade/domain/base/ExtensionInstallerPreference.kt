@@ -20,7 +20,7 @@ class ExtensionInstallerPreference(
 
     val entries get() = ExtensionInstaller.entries.toList()
 
-    override fun defaultValue() = ExtensionInstaller.PACKAGEINSTALLER
+    override fun defaultValue() = ExtensionInstaller.PRIVATE
 
     private fun check(value: ExtensionInstaller): ExtensionInstaller {
         return when (value) {
