@@ -16,12 +16,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.suspendCancellableCoroutine
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.lang.withIOContext
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.PriorityBlockingQueue
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -55,6 +57,12 @@ internal class HttpPageLoader(
      */
     private val queuedPages = mutableMapOf<ReaderPage, PriorityPage>()
 
+    /**
+     * Tracks the number of automatic retries per page so failed images are retried
+     * up to [MAX_PAGE_RETRIES] times before giving up.
+     */
+    private val pageAttempts = ConcurrentHashMap<ReaderPage, Int>()
+
     private val preloadPagesBefore: Int
         get() = readerPreferences.preloadPagesBefore().get()
 
@@ -66,15 +74,17 @@ internal class HttpPageLoader(
     // SY <--
 
     init {
-        scope.launchIO {
-            while (true) {
-                val queuedPage = runInterruptible { queue.take() }
-                try {
-                    if (queuedPage.page.status == Page.State.QUEUE) {
-                        internalLoadPage(queuedPage.page)
+        repeat(PAGE_WORKERS) {
+            scope.launchIO {
+                while (true) {
+                    val queuedPage = runInterruptible { queue.take() }
+                    try {
+                        if (queuedPage.page.status == Page.State.QUEUE) {
+                            internalLoadPage(queuedPage.page)
+                        }
+                    } finally {
+                        removeQueuedPage(queuedPage)
                     }
-                } finally {
-                    removeQueuedPage(queuedPage)
                 }
             }
         }
@@ -126,6 +136,7 @@ internal class HttpPageLoader(
         // Automatically retry failed pages when subscribed to this page
         if (page.status == Page.State.ERROR) {
             page.status = Page.State.QUEUE
+            pageAttempts.remove(page)
         }
 
         val offeredPages = mutableListOf<PriorityPage>()
@@ -151,6 +162,7 @@ internal class HttpPageLoader(
     override fun retryPage(page: ReaderPage) {
         if (page.status == Page.State.ERROR) {
             page.status = Page.State.QUEUE
+            pageAttempts.remove(page)
         }
         offerPage(page, 2)
     }
@@ -263,12 +275,29 @@ internal class HttpPageLoader(
 
             page.stream = { chapterCache.getImageFile(imageUrl).inputStream() }
             page.status = Page.State.READY
+            pageAttempts.remove(page)
         } catch (e: Throwable) {
             page.status = Page.State.ERROR
             if (e is CancellationException) {
                 throw e
             }
+            val attempts = pageAttempts.merge(page, 1, Int::plus)!!
+            if (attempts < MAX_PAGE_RETRIES) {
+                scope.launch {
+                    delay(PAGE_RETRY_DELAY_MS)
+                    if (page.status == Page.State.ERROR) {
+                        page.status = Page.State.QUEUE
+                        offerPage(page, 1)
+                    }
+                }
+            }
         }
+    }
+
+    companion object {
+        private const val PAGE_WORKERS = 2
+        private const val MAX_PAGE_RETRIES = 10
+        private const val PAGE_RETRY_DELAY_MS = 1200L
     }
 }
 

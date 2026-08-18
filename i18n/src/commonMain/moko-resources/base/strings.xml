@@ -120,6 +120,7 @@
     <string name="reader_boundary_release_to_open">Release to open</string>
     <!-- Do not translate "WebView" -->
     <string name="action_open_in_web_view">Open in WebView</string>
+    <string name="information_slow_source_load">Still loading… This source may need a one-time Cloudflare check. If it keeps spinning, open its WebView to verify.</string>
     <string name="action_web_view" translatable="false">WebView</string>
     <string name="action_migrate">Migrate</string>
     <string name="action_notes">Notes</string>

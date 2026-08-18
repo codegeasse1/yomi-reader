@@ -23,6 +23,7 @@ import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.util.formattedMessage
 import eu.kanade.tachiyomi.animesource.AnimeSource
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.coroutines.delay
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.domain.entries.anime.model.Anime
 import tachiyomi.domain.items.episode.model.NoEpisodesException
@@ -75,6 +76,26 @@ fun BrowseAnimeSourceContent(
             when (result) {
                 SnackbarResult.Dismissed -> snackbarHostState.currentSnackbarData?.dismiss()
                 SnackbarResult.ActionPerformed -> animeList.retry()
+            }
+        }
+    }
+
+    val isLoading = animeList.itemCount == 0 && animeList.loadState.refresh is LoadState.Loading
+
+    LaunchedEffect(isLoading) {
+        if (isLoading) {
+            delay(10_000L)
+            if (animeList.itemCount == 0 && animeList.loadState.refresh is LoadState.Loading) {
+                val result = snackbarHostState.showSnackbar(
+                    message = context.stringResource(MR.strings.information_slow_source_load),
+                    actionLabel = context.stringResource(MR.strings.action_open_in_web_view),
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Short,
+                )
+                when (result) {
+                    SnackbarResult.Dismissed -> snackbarHostState.currentSnackbarData?.dismiss()
+                    SnackbarResult.ActionPerformed -> onWebViewClick()
+                }
             }
         }
     }

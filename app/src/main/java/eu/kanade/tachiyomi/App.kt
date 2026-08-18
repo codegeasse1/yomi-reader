@@ -25,7 +25,6 @@ import coil3.disk.DiskCache
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.allowRgb565
-import coil3.request.crossfade
 import coil3.util.DebugLogger
 import com.yomi.reader.BuildConfig
 import com.yomi.reader.R
@@ -80,7 +79,6 @@ import eu.kanade.tachiyomi.util.system.DeviceUtil
 import eu.kanade.tachiyomi.util.system.GLUtil
 import eu.kanade.tachiyomi.util.system.WebViewUtil
 import eu.kanade.tachiyomi.util.system.activeNetworkState
-import eu.kanade.tachiyomi.util.system.animatorDurationScale
 import eu.kanade.tachiyomi.util.system.cancelNotification
 import eu.kanade.tachiyomi.util.system.isPreviewBuildType
 import eu.kanade.tachiyomi.util.system.networkStateFlow
@@ -532,19 +530,15 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
                 add(NovelPluginImageKeyer())
             }
 
-            // Low-RAM devices (the isLowRamDevice threshold is <3GB) are where image
-            // loading hurts most: every cached bitmap and every crossfade frame adds
-            // GC and draw jank. Drop the crossfade and keep the in-memory cache small
-            // there so lists and the reader stay smooth; the disk cache still makes
-            // revisits fast, and RGB565 halves bitmap size.
+            // Image speed: no crossfade anywhere so covers and reader pages appear the
+            // instant their bitmap is ready, and a generous in-memory cache makes
+            // scrolling back through thumbnails instant. RGB565 halves bitmap size on
+            // low-RAM devices (<3GB) where memory is tight.
             val isLowRam = DeviceUtil.isLowRamDevice(this@App)
-            if (!isLowRam) {
-                crossfade((300 * this@App.animatorDurationScale).toInt())
-            }
             allowRgb565(isLowRam)
             memoryCache {
                 MemoryCache.Builder()
-                    .maxSizePercent(this@App, if (isLowRam) 0.12 else 0.25)
+                    .maxSizePercent(this@App, if (isLowRam) 0.15 else 0.3)
                     .build()
             }
             diskCache {
@@ -557,7 +551,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
             // Coil spawns a new thread for every image load by default
             fetcherCoroutineContext(Dispatchers.IO.limitedParallelism(if (isLowRam) 8 else 16))
-            decoderCoroutineContext(Dispatchers.IO.limitedParallelism(if (isLowRam) 3 else 4))
+            decoderCoroutineContext(Dispatchers.IO.limitedParallelism(if (isLowRam) 4 else 6))
         }
             .build()
     }
