@@ -35,6 +35,26 @@ jobs:
       - name: Set up gradle
         uses: gradle/actions/setup-gradle@94baf225fe0a508e581a564467443d0e2379123b # v4.3.0
 
+      - name: Set up signing keystore from secrets
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          ALIAS: ${{ secrets.ALIAS }}
+        run: |
+          if [ -z "$SIGNING_KEY" ]; then
+            echo "::error::SIGNING_KEY secret is not set. Add the base64 keystore to repo Settings > Secrets > Actions."
+            exit 1
+          fi
+          mkdir -p signing
+          printf '%s' "$SIGNING_KEY" | base64 --decode > signing/yomi-release.keystore
+          {
+            echo "storePassword=${KEY_STORE_PASSWORD}"
+            echo "keyAlias=${ALIAS}"
+            echo "keyPassword=${KEY_PASSWORD}"
+          } > signing/keystore.properties
+          ls -la signing/
+
       - name: Check code format
         run: ./gradlew spotlessCheck
 

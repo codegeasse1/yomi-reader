@@ -551,11 +551,19 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
                 add(NovelPluginImageKeyer())
             }
 
-            crossfade((300 * this@App.animatorDurationScale).toInt())
-            allowRgb565(DeviceUtil.isLowRamDevice(this@App))
+            // Low-RAM devices (the isLowRamDevice threshold is <3GB) are where image
+            // loading hurts most: every cached bitmap and every crossfade frame adds
+            // GC and draw jank. Drop the crossfade and keep the in-memory cache small
+            // there so lists and the reader stay smooth; the disk cache still makes
+            // revisits fast, and RGB565 halves bitmap size.
+            val isLowRam = DeviceUtil.isLowRamDevice(this@App)
+            if (!isLowRam) {
+                crossfade((300 * this@App.animatorDurationScale).toInt())
+            }
+            allowRgb565(isLowRam)
             memoryCache {
                 MemoryCache.Builder()
-                    .maxSizePercent(this@App, 0.25)
+                    .maxSizePercent(this@App, if (isLowRam) 0.12 else 0.25)
                     .build()
             }
             diskCache {
@@ -567,7 +575,6 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
             if (networkPreferences.verboseLogging().get()) logger(DebugLogger())
 
             // Coil spawns a new thread for every image load by default
-            val isLowRam = DeviceUtil.isLowRamDevice(this@App)
             fetcherCoroutineContext(Dispatchers.IO.limitedParallelism(if (isLowRam) 8 else 16))
             decoderCoroutineContext(Dispatchers.IO.limitedParallelism(if (isLowRam) 3 else 4))
         }
