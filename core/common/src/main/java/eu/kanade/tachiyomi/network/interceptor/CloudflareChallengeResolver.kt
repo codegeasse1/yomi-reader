@@ -116,11 +116,55 @@ internal class WebViewCloudflareChallengeResolver(
             if (isWebViewOutdatedNow) {
                 context.toast(MR.strings.information_webview_outdated, Toast.LENGTH_LONG)
             } else if (hasInteractiveWidget) {
+                // Turnstile/captcha: automatically show a visible WebView, wait for the user to
+                // complete it, and only fail if they abandon it.
+                if (solveVisibleChallenge(originalRequest)) {
+                    return
+                }
                 context.toast(MR.strings.information_cloudflare_interactive_challenge, Toast.LENGTH_LONG)
                 throw CloudflareInteractiveChallengeException()
             }
 
             throw CloudflareBypassException()
+        }
+    }
+
+    /**
+     * Shows a visible WebView ([CloudflareWebviewLauncher]) for a challenge that needs a human
+     * (Turnstile captcha) and blocks until the user completes or abandons it. The screen closes
+     * itself the moment a fresh cf_clearance cookie appears.
+     */
+    private fun solveVisibleChallenge(originalRequest: Request): Boolean {
+        val launcher = CloudflareWebviewLauncherHolder.launcher ?: return false
+        val host = originalRequest.url.host
+        val future = CloudflareWebviewSolveRegistry.register(host)
+        val headers = parseHeaders(originalRequest.headers)
+
+        try {
+            mainExecutor.execute {
+                try {
+                    launcher.launch(
+                        url = originalRequest.url.toString(),
+                        headers = headers,
+                        host = host,
+                    )
+                } catch (_: Throwable) {
+                    CloudflareWebviewSolveRegistry.report(host, false)
+                }
+            }
+        } catch (_: Throwable) {
+            CloudflareWebviewSolveRegistry.report(host, false)
+        }
+
+        return try {
+            val solved = future.get(VISIBLE_SOLVE_TIMEOUT_MINUTES, TimeUnit.MINUTES)
+            if (!solved) {
+                CloudflareWebviewSolveRegistry.report(host, false)
+            }
+            solved
+        } catch (_: Exception) {
+            CloudflareWebviewSolveRegistry.report(host, false)
+            false
         }
     }
 
@@ -175,6 +219,9 @@ internal val INTERACTIVE_WIDGET_PROBE = """
 private fun CountDownLatch.awaitFor30Seconds() {
     await(30, TimeUnit.SECONDS)
 }
+
+// How long the visible verification screen may stay open for a human to solve a captcha.
+private const val VISIBLE_SOLVE_TIMEOUT_MINUTES = 5L
 
 internal open class CloudflareBypassException : Exception()
 internal class CloudflareInteractiveChallengeException : CloudflareBypassException()
