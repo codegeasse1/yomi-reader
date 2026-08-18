@@ -11,8 +11,12 @@ class AppUpdatePreferences(
      * -1 = on app start only
      * 0 = never (disabled)
      * 6, 12, 24, 168 = interval in hours
+     *
+     * Defaults to 12 hours so installed apps show a notification when a new release
+     * is published (with Download and "What's New"/GitHub actions). The user can
+     * switch it to on-start-only or never in Settings > About > Update frequency.
      */
-    fun appUpdateInterval() = preferenceStore.getInt("pref_app_update_interval", -1)
+    fun appUpdateInterval() = preferenceStore.getInt("pref_app_update_interval", 12)
 
     fun lastAppUpdateCheck() = preferenceStore.getLong(
         Preference.appStateKey("last_app_update_check"),
