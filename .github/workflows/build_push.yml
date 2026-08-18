@@ -103,20 +103,14 @@ jobs:
           cat > /tmp/release-notes.md <<'EOF'
           ## What's new
 
-          **✨ Trust all in one tap**
-          No more tapping "Trust" on every installed extension one by one. There's now a **Trust all** button that makes all your already-installed extensions work instantly with a single tap.
+          **🖼️ Auto-retry failed images in the reader**
+          If a chapter image fails to load, the app now automatically retries it up to 10 times (with a short pause between tries) and stops the moment it loads. No more stuck black pages.
 
-          **⚡ Smooth, lag-free — even on low-end phones**
-          The app is optimized to run smoothly on devices with as little as 2GB of RAM. Image loading uses less memory, heavy animations are toned down on weaker devices, and the app is fully optimized — browsing your library and reading feels much more fluid.
+          **☁️ Cloudflare loading warning**
+          If a source shows nothing for 10 seconds, you'll get a quick warning suggesting the source may need a one-time Cloudflare check — with a button to open its WebView and an X to dismiss it.
 
-          **📥 In-app installer**
-          Extensions now install automatically in the background — no more pressing the install button and confirming over and over. Tap install once and it's done.
-
-          **🌊 New splash screen**
-          A fresh new look when the app starts up.
-
-          **🔔 Update notifications**
-          The app checks for new versions automatically and notifies you when an update is available. Download it directly from the notification, or open the GitHub release page.
+          **⚡ Faster image loading**
+          Chapter images now download two at a time, thumbnails decode faster, the image memory cache is bigger, and covers appear instantly with no fade-in delay.
 
           ## Download
           - **app-arm64-v8a-release.apk** — for most phones (64-bit)
