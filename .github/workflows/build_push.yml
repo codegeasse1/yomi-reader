@@ -103,14 +103,10 @@ jobs:
           cat > /tmp/release-notes.md <<'EOF'
           ## What's new
 
-          **🖼️ Auto-retry failed images in the reader**
-          If a chapter image fails to load, the app now automatically retries it up to 10 times (with a short pause between tries) and stops the moment it loads. No more stuck black pages.
+          **⚡ Even faster chapter loading**
+          The reader now downloads 5 pages at a time instead of 2, so chapters load noticeably quicker.
 
-          **☁️ Cloudflare loading warning**
-          If a source shows nothing for 10 seconds, you'll get a quick warning suggesting the source may need a one-time Cloudflare check — with a button to open its WebView and an X to dismiss it.
-
-          **⚡ Faster image loading**
-          Chapter images now download two at a time, thumbnails decode faster, the image memory cache is bigger, and covers appear instantly with no fade-in delay.
+          *(Still included from the last update: auto-retry for failed images, Cloudflare loading warning, and faster thumbnails.)*
 
           ## Download
           - **app-arm64-v8a-release.apk** — for most phones (64-bit)
