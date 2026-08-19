@@ -296,7 +296,7 @@ internal class HttpPageLoader(
     }
 
     companion object {
-        private const val PAGE_WORKERS = 2
+        private const val PAGE_WORKERS = 5
         private const val MAX_PAGE_RETRIES = 10
         private const val PAGE_RETRY_DELAY_MS = 1200L
     }
