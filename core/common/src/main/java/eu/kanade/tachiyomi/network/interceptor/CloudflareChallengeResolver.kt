@@ -170,8 +170,9 @@ internal class WebViewCloudflareChallengeResolver(
             if (System.currentTimeMillis() - startedAt >= HEADLESS_SOLVE_TIMEOUT_MS) break
         }
 
-        if (!result.bypassed && result.webview != null) {
-            result.interactive = detectInteractiveWidgetSync(result.webview) || result.interactive
+        val webview = result.webview
+        if (!result.bypassed && webview != null) {
+            result.interactive = detectInteractiveWidgetSync(webview) || result.interactive
         }
 
         return result
