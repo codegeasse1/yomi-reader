@@ -31,7 +31,12 @@ class NetworkHelper(
             .cookieJar(cookieJar)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
-            .callTimeout(2, TimeUnit.MINUTES)
+            // Long enough to cover a Cloudflare challenge solve (headless auto-solve, or the
+            // visible verification screen that can wait for a human to finish a Turnstile
+            // captcha) plus the follow-up retries that carry the fresh cf_clearance cookie.
+            // A shorter callTimeout killed these calls mid-solve, surfacing as a spurious
+            // "timeout" right after the challenge was actually solved.
+            .callTimeout(6, TimeUnit.MINUTES)
             .dispatcher(
                 okhttp3.Dispatcher().apply {
                     maxRequests = 64

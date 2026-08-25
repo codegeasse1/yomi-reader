@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.network.interceptor
 
 import android.content.Context
+import android.webkit.CookieManager
 import androidx.core.content.ContextCompat
 import eu.kanade.tachiyomi.network.AndroidCookieJar
 import eu.kanade.tachiyomi.util.system.isOutdated
@@ -77,14 +78,28 @@ class CloudflareInterceptor(
 
                 webViewChallengeResolver.resolve(request, oldCookie)
 
-                val firstAttempt = chain.proceed(request)
-                if (!shouldIntercept(firstAttempt)) {
-                    return firstAttempt
+                // The fresh cf_clearance has to be visible to OkHttp before the retry: WebView
+                // writes land in the shared Android CookieManager, so flush it and give Cloudflare
+                // a beat to register the just-solved clearance. Without this the first retry can
+                // still be challenged and the request "keeps loading" before failing - the exact
+                // failure a manual re-tap used to paper over.
+                CookieManager.getInstance().flush()
+
+                var attempt = chain.proceed(request)
+                var retries = 0
+                while (shouldIntercept(attempt) && retries < MAX_RETRIES_AFTER_SOLVE) {
+                    attempt.close()
+                    retries++
+                    try {
+                        Thread.sleep(RETRY_DELAY_MS)
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        break
+                    }
+                    CookieManager.getInstance().flush()
+                    attempt = chain.proceed(request)
                 }
-                // The cookie set on CookieManager may not have propagated to OkHttp's
-                // CookieJar yet for the in-flight connection; close and retry once.
-                firstAttempt.close()
-                return chain.proceed(request)
+                return attempt
             }
         }
         // Because OkHttp's enqueue only handles IOExceptions, wrap the exception so that
@@ -104,6 +119,11 @@ class CloudflareInterceptor(
 
 internal val ERROR_CODES = listOf(403, 503)
 private val COOKIE_NAMES = listOf("cf_clearance")
+
+// Retries after a successful solve: Cloudflare sometimes needs a moment to accept a freshly
+// minted clearance, so we try a few times with a short settle delay instead of giving up.
+private const val MAX_RETRIES_AFTER_SOLVE = 2
+private const val RETRY_DELAY_MS = 500L
 
 // Just enough to capture the challenge headers/markers; the page body is larger
 // but the challenge identifiers always appear near the top.
