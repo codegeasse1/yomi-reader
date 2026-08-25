@@ -76,7 +76,9 @@ internal class WebViewCloudflareChallengeResolver(
 
     private class HeadlessSolve {
         @Volatile var bypassed = false
+
         @Volatile var interactive = false
+
         @Volatile var webview: WebView? = null
     }
 
@@ -281,11 +283,14 @@ internal val INTERACTIVE_WIDGET_PROBE = """
 
 // How long the hidden WebView may spend auto-solving before we escalate to the visible screen.
 private const val HEADLESS_SOLVE_TIMEOUT_MS = 20_000L
+
 // How often the cookie jar is polled for a freshly-landed cf_clearance.
 private const val COOKIE_POLL_INTERVAL_MS = 250L
+
 // Widget-probe cadence while the hidden WebView is busy (Turnstile renders late sometimes).
 private const val WIDGET_PROBE_INTERVAL_MS = 1_500L
 private const val MAX_WIDGET_PROBES = 8
+
 // How long the visible verification screen may stay open for a human to solve a captcha.
 private const val VISIBLE_SOLVE_TIMEOUT_MINUTES = 5L
 
