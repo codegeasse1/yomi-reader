@@ -103,10 +103,10 @@ jobs:
           cat > /tmp/release-notes.md <<'EOF'
           ## What's new
 
-          **⚡ Even faster chapter loading**
-          The reader now downloads 5 pages at a time instead of 2, so chapters load noticeably quicker.
+          **☁️ Reliable Cloudflare handling — no more stuck loading**
+          When a source is behind a Cloudflare check, the app now shows a verification screen that closes automatically the moment you're verified. No more waiting forever or re-tapping to load pages.
 
-          *(Still included from the last update: auto-retry for failed images, Cloudflare loading warning, and faster thumbnails.)*
+          *(Still included from previous updates: faster chapter loading, auto-retry for failed images, and faster thumbnails.)*
 
           ## Download
           - **app-arm64-v8a-release.apk** — for most phones (64-bit)
