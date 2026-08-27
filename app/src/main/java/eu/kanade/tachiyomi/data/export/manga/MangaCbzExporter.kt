@@ -240,7 +240,14 @@ class MangaCbzExporter(
         const val CBZ_MIME_TYPE = "application/vnd.comicbook+zip"
 
         private val IMAGE_EXTENSIONS = setOf(
-            "jpg", "jpeg", "png", "gif", "webp", "bmp", "avif", "jxl",
+            "jpg",
+            "jpeg",
+            "png",
+            "gif",
+            "webp",
+            "bmp",
+            "avif",
+            "jxl",
         )
     }
 }
