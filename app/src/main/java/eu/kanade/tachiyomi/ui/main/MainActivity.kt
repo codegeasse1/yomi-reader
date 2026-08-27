@@ -98,6 +98,7 @@ import eu.kanade.tachiyomi.data.updater.AppUpdateChecker
 import eu.kanade.tachiyomi.data.updater.AppUpdateJob
 import eu.kanade.tachiyomi.data.updater.GITHUB_REPO
 import eu.kanade.tachiyomi.data.updater.RELEASE_URL
+import eu.kanade.tachiyomi.data.updater.resolveAppUpdatePrompt
 import eu.kanade.tachiyomi.data.updater.resolveUpdatedChangelogPrompt
 import eu.kanade.tachiyomi.extension.ExtensionAutoUpdateRunner
 import eu.kanade.tachiyomi.extension.anime.api.AnimeExtensionApi
@@ -661,24 +662,39 @@ class MainActivity : BaseActivity() {
                         val appUpdatePreferences = Injekt.get<AppUpdatePreferences>()
                         val interval = appUpdatePreferences.appUpdateInterval().get()
 
-                        val screen = if (interval == -1) {
-                            when (val result = AppUpdateChecker().checkForUpdate(context)) {
-                                is GetApplicationRelease.Result.NewUpdate -> NewUpdateScreen(
-                                    versionName = result.release.version,
-                                    releaseDate = result.release.releaseDate,
-                                    changelogInfo = result.release.info,
-                                    releaseLink = result.release.releaseLink,
-                                    downloadLink = result.release.downloadLink,
-                                )
-                                else -> null
-                            }
-                        } else {
-                            null
-                        }
-
                         // Set up periodic check (will cancel if interval <= 0)
                         AppUpdateJob.setupTask(context)
-                        screen
+
+                        // Always check on app start so the update prompt shows as soon as the
+                        // app opens (unless app updates are disabled entirely).
+                        if (interval == 0) {
+                            null
+                        } else {
+                            val result = AppUpdateChecker().checkForUpdate(
+                                context,
+                                forceCheck = true,
+                                showNotification = false,
+                            )
+                            if (result is GetApplicationRelease.Result.NewUpdate) {
+                                val decision = resolveAppUpdatePrompt(
+                                    availableVersion = result.release.version,
+                                    ignoredVersion = appUpdatePreferences.ignoredAppUpdateVersion().get(),
+                                )
+                                if (decision.shouldPrompt) {
+                                    NewUpdateScreen(
+                                        versionName = result.release.version,
+                                        releaseDate = result.release.releaseDate,
+                                        changelogInfo = result.release.info,
+                                        releaseLink = result.release.releaseLink,
+                                        downloadLink = result.release.downloadLink,
+                                    )
+                                } else {
+                                    null
+                                }
+                            } else {
+                                null
+                            }
+                        }
                     }
                     updateScreen?.let(navigator::push)
                 } catch (e: Exception) {

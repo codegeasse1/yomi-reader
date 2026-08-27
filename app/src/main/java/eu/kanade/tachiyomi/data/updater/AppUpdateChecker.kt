@@ -13,7 +13,11 @@ class AppUpdateChecker {
     private val getApplicationRelease: GetApplicationRelease by injectLazy()
     private val appUpdatePreferences: AppUpdatePreferences by injectLazy()
 
-    suspend fun checkForUpdate(context: Context, forceCheck: Boolean = false): GetApplicationRelease.Result {
+    suspend fun checkForUpdate(
+        context: Context,
+        forceCheck: Boolean = false,
+        showNotification: Boolean = true,
+    ): GetApplicationRelease.Result {
         // Disabling app update checks for older Android versions that we're going to drop support for
         // if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
         //    return GetApplicationRelease.Result.OsTooOld
@@ -42,7 +46,7 @@ class AppUpdateChecker {
                         ignoredVersionPreference.set(decision.nextIgnoredVersion)
                     }
 
-                    if (decision.shouldPrompt) {
+                    if (decision.shouldPrompt && showNotification) {
                         AppUpdateNotifier(context).promptUpdate(result.release)
                     }
                 }
