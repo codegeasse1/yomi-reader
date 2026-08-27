@@ -193,9 +193,15 @@ class MangaScreen(
                 if (!downloadAllCancelled) {
                     context.toast(
                         when {
-                            !report.success -> context.stringResource(MR.strings.download_all_failed, downloadAllFolderLabel)
-                            report.failedChapters.isEmpty() ->
-                                context.stringResource(MR.strings.download_all_done, report.copiedChapters, downloadAllFolderLabel)
+                            !report.success -> context.stringResource(
+                                MR.strings.download_all_failed,
+                                downloadAllFolderLabel,
+                            )
+                            report.failedChapters.isEmpty() -> context.stringResource(
+                                MR.strings.download_all_done,
+                                report.copiedChapters,
+                                downloadAllFolderLabel,
+                            )
                             else -> context.stringResource(
                                 MR.strings.download_all_partial,
                                 report.copiedChapters,
@@ -928,7 +934,9 @@ private fun resolveMangaCbzFailureMessage(
 ): String = when (result.reason) {
     MangaCbzExportFailure.NO_CHAPTERS_SELECTED -> context.stringResource(MR.strings.manga_export_no_chapters)
     MangaCbzExportFailure.NO_DOWNLOADED_CHAPTERS -> context.stringResource(MR.strings.manga_export_no_downloaded)
-    MangaCbzExportFailure.DESTINATION_PERMISSION_DENIED -> context.stringResource(MR.strings.manga_export_destination_error)
+    MangaCbzExportFailure.DESTINATION_PERMISSION_DENIED -> context.stringResource(
+        MR.strings.manga_export_destination_error,
+    )
     MangaCbzExportFailure.UNKNOWN -> context.stringResource(MR.strings.manga_export_failed)
 }
 
