@@ -66,6 +66,7 @@ import eu.kanade.presentation.entries.manga.components.ScanlatorFilterDialog
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.Screen
 import eu.kanade.presentation.util.isTabletUi
+import eu.kanade.tachiyomi.data.export.manga.MangaCbzExportFailure
 import eu.kanade.tachiyomi.data.export.manga.MangaCbzExportProgress
 import eu.kanade.tachiyomi.data.export.manga.MangaCbzExportResult
 import eu.kanade.tachiyomi.data.export.manga.MangaCbzExporter
@@ -91,6 +92,7 @@ import eu.kanade.tachiyomi.util.storage.getUriCompat
 import eu.kanade.tachiyomi.util.system.copyToClipboard
 import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import logcat.LogPriority
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -152,8 +154,60 @@ class MangaScreen(
         var showEditMetadataSheet by remember { mutableStateOf(false) }
         var showCbzExportSheet by remember { mutableStateOf(false) }
         var cbzExportProgress by remember { mutableStateOf<MangaCbzExportProgress?>(null) }
-        val cbzExportFailedMessage = stringResource(MR.strings.manga_export_failed)
         val cbzExportSavedMessage = stringResource(MR.strings.manga_export_saved_to_folder)
+        var showDownloadAllSheet by remember { mutableStateOf(false) }
+        var downloadAllCancelled by remember { mutableStateOf(false) }
+        var downloadAllCopied by remember { mutableStateOf(0) }
+        var downloadAllTotal by remember { mutableStateOf(0) }
+        var downloadAllFinished by remember { mutableStateOf(false) }
+        var downloadAllFolderLabel by remember { mutableStateOf("") }
+
+        val downloadAllFolderPicker = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocumentTree(),
+        ) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            try {
+                context.contentResolver.takePersistableUriPermission(uri, flags)
+            } catch (_: SecurityException) {
+                // Some devices do not provide persistable grants; the URI still works for this session.
+            }
+            downloadAllCancelled = false
+            downloadAllFinished = false
+            downloadAllCopied = 0
+            downloadAllTotal = successState.chapters.size
+            downloadAllFolderLabel = resolveMangaExportTreeDisplayName(context, uri.toString())
+            showDownloadAllSheet = true
+            scope.launch {
+                val report = screenModel.downloadAllToFolder(
+                    destinationTreeUri = uri.toString(),
+                    shouldStop = { downloadAllCancelled },
+                    onProgress = { copied, total ->
+                        downloadAllCopied = copied
+                        downloadAllTotal = total
+                    },
+                )
+                downloadAllFinished = true
+                downloadAllTotal = report.totalChapters
+                downloadAllCopied = report.copiedChapters
+                if (!downloadAllCancelled) {
+                    context.toast(
+                        when {
+                            !report.success -> context.stringResource(MR.strings.download_all_failed, downloadAllFolderLabel)
+                            report.failedChapters.isEmpty() ->
+                                context.stringResource(MR.strings.download_all_done, report.copiedChapters, downloadAllFolderLabel)
+                            else -> context.stringResource(
+                                MR.strings.download_all_partial,
+                                report.copiedChapters,
+                                downloadAllFolderLabel,
+                                report.failedChapters.size,
+                            )
+                        },
+                    )
+                }
+            }
+        }
+
         val showScanlatorSelector = successState.showScanlatorSelector &&
             shouldShowMangaScanlatorSelector(
                 isPreferenceEnabled = showMangaScanlatorBranches,
@@ -243,6 +297,9 @@ class MangaScreen(
             onExportAsCbzClicked = {
                 cbzExportProgress = null
                 showCbzExportSheet = true
+            }.takeIf { !successState.source.isLocalOrStub() },
+            onDownloadAllToFolderClicked = {
+                downloadAllFolderPicker.launch(null)
             }.takeIf { !successState.source.isLocalOrStub() },
             onEditCategoryClicked = screenModel::showChangeCategoryDialog.takeIf { successState.manga.favorite },
             onEditFetchIntervalClicked = screenModel::showSetMangaFetchIntervalDialog.takeIf {
@@ -492,7 +549,7 @@ class MangaScreen(
                         }
                         when (result) {
                             is MangaCbzExportResult.Failure -> {
-                                context.toast(cbzExportFailedMessage)
+                                context.toast(resolveMangaCbzFailureMessage(context, result))
                                 return@launch
                             }
                             is MangaCbzExportResult.Success -> {
@@ -506,6 +563,17 @@ class MangaScreen(
                         }
                     }
                 },
+            )
+        }
+
+        if (showDownloadAllSheet) {
+            DownloadAllProgressSheet(
+                folderLabel = downloadAllFolderLabel,
+                copied = downloadAllCopied,
+                total = downloadAllTotal,
+                finished = downloadAllFinished,
+                onCancel = { downloadAllCancelled = true },
+                onClose = { showDownloadAllSheet = false },
             )
         }
     }
@@ -849,6 +917,81 @@ private fun MangaCbzExportSheet(
                 enabled = !isExporting && rangeSelection.isValid,
             ) {
                 Text(stringResource(MR.strings.manga_export_confirm))
+            }
+        }
+    }
+}
+
+private fun resolveMangaCbzFailureMessage(
+    context: Context,
+    result: MangaCbzExportResult.Failure,
+): String = when (result.reason) {
+    MangaCbzExportFailure.NO_CHAPTERS_SELECTED -> context.stringResource(MR.strings.manga_export_no_chapters)
+    MangaCbzExportFailure.NO_DOWNLOADED_CHAPTERS -> context.stringResource(MR.strings.manga_export_no_downloaded)
+    MangaCbzExportFailure.DESTINATION_PERMISSION_DENIED -> context.stringResource(MR.strings.manga_export_destination_error)
+    MangaCbzExportFailure.UNKNOWN -> context.stringResource(MR.strings.manga_export_failed)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DownloadAllProgressSheet(
+    folderLabel: String,
+    copied: Int,
+    total: Int,
+    finished: Boolean,
+    onCancel: () -> Unit,
+    onClose: () -> Unit,
+) {
+    LaunchedEffect(finished) {
+        if (finished) {
+            delay(1_200)
+            onClose()
+        }
+    }
+    ModalBottomSheet(
+        onDismissRequest = {
+            if (finished) onClose() else onCancel()
+        },
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = stringResource(MR.strings.download_all_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = stringResource(MR.strings.download_all_to, folderLabel),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (!finished) {
+                LinearProgressIndicator(
+                    progress = if (total > 0) copied.toFloat() / total else 0f,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    text = "$copied/$total",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(
+                    onClick = onCancel,
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Text(stringResource(MR.strings.download_all_cancel))
+                }
+            } else {
+                Text(
+                    text = stringResource(MR.strings.download_all_finished),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

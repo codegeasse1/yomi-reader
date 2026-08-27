@@ -161,6 +161,7 @@ fun MangaScreenAuroraImpl(
     onShareClicked: (() -> Unit)?,
     onDownloadActionClicked: ((DownloadAction) -> Unit)?,
     onExportAsCbzClicked: (() -> Unit)? = null,
+    onDownloadAllToFolderClicked: (() -> Unit)? = null,
     onEditCategoryClicked: (() -> Unit)?,
     onEditFetchIntervalClicked: (() -> Unit)?,
     onEditNotesClicked: (() -> Unit)?,
@@ -1204,6 +1205,7 @@ fun MangaScreenAuroraImpl(
                             isManga = true,
                             useAuroraStyle = true,
                             onExportAsCbzClicked = onExportAsCbzClicked,
+                            onDownloadAllToFolderClicked = onDownloadAllToFolderClicked,
                         )
                     }
                 }

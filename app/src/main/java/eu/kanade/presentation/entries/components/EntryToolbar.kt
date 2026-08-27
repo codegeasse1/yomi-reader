@@ -55,6 +55,7 @@ fun EntryToolbar(
     backgroundAlphaProvider: () -> Float,
     isManga: Boolean,
     onExportAsCbzClicked: (() -> Unit)? = null,
+    onDownloadAllToFolderClicked: (() -> Unit)? = null,
     overflowActions: List<AppBar.OverflowAction> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
@@ -82,6 +83,7 @@ fun EntryToolbar(
                     onDownloadClicked = onClickDownload,
                     isManga = isManga,
                     onExportAsCbzClicked = onExportAsCbzClicked,
+                    onDownloadAllToFolderClicked = onDownloadAllToFolderClicked,
                 )
             }
 

@@ -1001,6 +1001,16 @@
     <string name="manga_export_failed">Failed to export CBZ</string>
     <string name="manga_export_saved_to_folder">CBZ saved to selected folder</string>
     <string name="manga_export_sharing_cbz">Preparing CBZ…</string>
+    <string name="manga_export_no_chapters">No chapters to export</string>
+    <string name="manga_export_no_downloaded">No downloaded chapters found — tap Download all to save chapters to a folder first</string>
+    <string name="manga_export_destination_error">Couldn\'t write to the destination folder</string>
+    <string name="download_all_title">Downloading chapters</string>
+    <string name="download_all_to">To: %1$s</string>
+    <string name="download_all_cancel">Cancel</string>
+    <string name="download_all_finished">Finished saving chapters</string>
+    <string name="download_all_done">Downloaded %1$d chapters to %2$s</string>
+    <string name="download_all_partial">Downloaded %1$d chapters to %2$s (%3$d failed)</string>
+    <string name="download_all_failed">Couldn\'t download chapters to %1$s</string>
     <string name="custom_cover">Custom cover</string>
     <string name="manga_cover">Cover</string>
     <string name="cover_saved">Cover saved</string>

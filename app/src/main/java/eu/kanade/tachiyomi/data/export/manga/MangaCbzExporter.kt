@@ -32,6 +32,14 @@ data class MangaCbzExportReport(
     val outputSizeBytes: Long = 0L,
 )
 
+data class MangaFolderDownloadReport(
+    val totalChapters: Int,
+    val copiedChapters: Int,
+    val failedChapters: List<String> = emptyList(),
+) {
+    val success: Boolean get() = copiedChapters > 0
+}
+
 sealed interface MangaCbzExportResult {
     data class Success(
         val cacheFile: File,
@@ -236,6 +244,48 @@ class MangaCbzExporter(
         return target.uri.takeIf { copied }
     }
 
+    /**
+     * Copies one downloaded chapter's page images into `folderRoot/<chapter name>/` as loose files.
+     * Returns true if at least one page image was written.
+     */
+    fun copyDownloadedChapterToFolder(
+        source: MangaSource,
+        manga: Manga,
+        chapter: Chapter,
+        folderRoot: DocumentFile,
+    ): Boolean {
+        val context = application ?: return false
+        val pages = runCatching { downloadManager.buildPageList(source, manga, chapter) }.getOrNull() ?: return false
+        if (pages.isEmpty()) return false
+
+        val chapterDirName = DiskUtil.buildValidFilename(chapter.name)
+            .replace(Regex("[\\\\\\\\/:*?\"<>|]"), " ")
+        val chapterFolder = folderRoot.createDirectory(chapterDirName) ?: return false
+
+        var wroteAny = false
+        for ((index, page) in pages.withIndex()) {
+            val uri = page.uri ?: continue
+            val srcFile = uri.path?.let { File(it) } ?: continue
+            if (!srcFile.isFile) continue
+            val ext = uri.lastPathSegment
+                ?.substringAfterLast('.', "")
+                ?.lowercase()
+                ?.takeIf { it in IMAGE_EXTENSIONS }
+                ?: "jpg"
+            val pageName = "${(index + 1).toString().padStart(3, '0')}.$ext"
+            val dest = chapterFolder.createFile(imageMimeFor(ext), pageName) ?: continue
+            val written = runCatching {
+                context.contentResolver.openOutputStream(dest.uri, "w")?.use { output ->
+                    srcFile.inputStream().use { input ->
+                        input.copyTo(output)
+                    }
+                } != null
+            }.getOrDefault(false)
+            if (written) wroteAny = true
+        }
+        return wroteAny
+    }
+
     companion object {
         const val CBZ_MIME_TYPE = "application/vnd.comicbook+zip"
 
@@ -249,5 +299,16 @@ class MangaCbzExporter(
             "avif",
             "jxl",
         )
+
+        private fun imageMimeFor(ext: String): String = when (ext) {
+            "jpg", "jpeg" -> "image/jpeg"
+            "png" -> "image/png"
+            "gif" -> "image/gif"
+            "webp" -> "image/webp"
+            "bmp" -> "image/bmp"
+            "avif" -> "image/avif"
+            "jxl" -> "image/jxl"
+            else -> "image/jpeg"
+        }
     }
 }

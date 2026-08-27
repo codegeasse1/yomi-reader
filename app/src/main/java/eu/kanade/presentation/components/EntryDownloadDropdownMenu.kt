@@ -29,8 +29,16 @@ fun EntryDownloadDropdownMenu(
     useAuroraStyle: Boolean = false,
     modifier: Modifier = Modifier,
     onExportAsCbzClicked: (() -> Unit)? = null,
+    onDownloadAllToFolderClicked: (() -> Unit)? = null,
 ) {
     val colors = AuroraTheme.colors
+    fun handleClick(downloadAction: DownloadAction) {
+        if (downloadAction == DownloadAction.ALL_ITEMS && onDownloadAllToFolderClicked != null) {
+            onDownloadAllToFolderClicked()
+        } else {
+            onDownloadClicked(downloadAction)
+        }
+    }
     val downloadAmount = if (isManga) MR.plurals.download_amount else AYMR.plurals.download_amount_anime
     val downloadUnviewed = if (isManga) MR.strings.download_unread else AYMR.strings.download_unseen
     val downloadAll = if (isManga) MR.strings.download_all else AYMR.strings.download_all_anime
@@ -53,7 +61,7 @@ fun EntryDownloadDropdownMenu(
                 AuroraEntryDropdownMenuItem(
                     text = string,
                     onClick = {
-                        onDownloadClicked(downloadAction)
+                        handleClick(downloadAction)
                         onDismissRequest()
                     },
                 )
@@ -86,7 +94,7 @@ fun EntryDownloadDropdownMenu(
                         )
                     },
                     onClick = {
-                        onDownloadClicked(downloadAction)
+                        handleClick(downloadAction)
                         onDismissRequest()
                     },
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),

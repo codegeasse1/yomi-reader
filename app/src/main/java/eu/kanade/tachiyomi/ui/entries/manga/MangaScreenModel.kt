@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.entries.manga
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
@@ -8,6 +9,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.util.fastAny
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.flowWithLifecycle
 import cafe.adriel.voyager.core.model.StateScreenModel
@@ -52,6 +54,7 @@ import eu.kanade.tachiyomi.data.export.manga.MangaCbzExportOptions
 import eu.kanade.tachiyomi.data.export.manga.MangaCbzExportProgress
 import eu.kanade.tachiyomi.data.export.manga.MangaCbzExportResult
 import eu.kanade.tachiyomi.data.export.manga.MangaCbzExporter
+import eu.kanade.tachiyomi.data.export.manga.MangaFolderDownloadReport
 import eu.kanade.tachiyomi.data.suggestions.SuggestionCoordinator
 import eu.kanade.tachiyomi.data.suggestions.SuggestionItem
 import eu.kanade.tachiyomi.data.suggestions.SuggestionSeed
@@ -136,6 +139,8 @@ import tachiyomi.source.local.entries.manga.isLocal
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import kotlin.math.floor
+
+private const val DOWNLOAD_ALL_TIMEOUT_MS = 30 * 60 * 1000L
 
 class MangaScreenModel(
     private val context: Context,
@@ -1558,6 +1563,92 @@ class MangaScreenModel(
                 destinationTreeUri = destinationTreeUri,
             ),
             onProgress = onProgress,
+        )
+    }
+
+    /**
+     * Downloads every not-yet-downloaded chapter (in-app, for offline reading too) and copies each
+     * downloaded chapter's page images into the user-picked folder as loose files, one folder per
+     * chapter: `<folder>/<chapter name>/001.jpg...`. Already-downloaded chapters are copied first;
+     * the rest are queued for download and copied as they complete.
+     */
+    suspend fun downloadAllToFolder(
+        destinationTreeUri: String,
+        shouldStop: () -> Boolean = { false },
+        onProgress: (copied: Int, total: Int) -> Unit = { _, _ -> },
+    ): MangaFolderDownloadReport {
+        val state = successState ?: return MangaFolderDownloadReport(0, 0)
+        val manga = state.manga
+        val source = state.source
+        val chapters = state.chapters.map { it.chapter }.sortedBy { it.sourceOrder }
+        if (chapters.isEmpty()) {
+            return MangaFolderDownloadReport(0, 0)
+        }
+
+        val treeRoot = runCatching {
+            DocumentFile.fromTreeUri(context, Uri.parse(destinationTreeUri))
+        }.getOrNull()
+        if (treeRoot == null) {
+            return MangaFolderDownloadReport(chapters.size, 0, chapters.map { it.name })
+        }
+
+        val failed = mutableListOf<String>()
+        val copiedIds = mutableSetOf<Long>()
+        var copied = 0
+
+        fun copyIfPossible(ch: Chapter) {
+            if (copiedIds.contains(ch.id)) return
+            val ok = mangaCbzExporter.copyDownloadedChapterToFolder(source, manga, ch, treeRoot)
+            if (ok) {
+                copiedIds += ch.id
+                copied++
+            } else if (!failed.contains(ch.name)) {
+                failed += ch.name
+            }
+        }
+
+        for (ch in chapters) {
+            if (downloadManager.isChapterDownloaded(ch.name, ch.scanlator, manga.title, manga.source)) {
+                copyIfPossible(ch)
+            }
+        }
+        onProgress(copied, chapters.size)
+
+        val toDownload = chapters.filter { it.id !in copiedIds }
+        if (toDownload.isNotEmpty()) {
+            downloadChapters(toDownload)
+            val deadline = System.currentTimeMillis() + DOWNLOAD_ALL_TIMEOUT_MS
+            val pending = toDownload.toMutableList()
+            var cancelled = false
+            while (pending.isNotEmpty() && System.currentTimeMillis() < deadline) {
+                if (shouldStop()) {
+                    cancelled = true
+                    break
+                }
+                delay(2_000)
+                val iter = pending.iterator()
+                while (iter.hasNext()) {
+                    val ch = iter.next()
+                    val queued = downloadManager.getQueuedDownloadOrNull(ch.id)
+                    if (downloadManager.isChapterDownloaded(ch.name, ch.scanlator, manga.title, manga.source)) {
+                        iter.remove()
+                        copyIfPossible(ch)
+                    } else if (queued?.status == MangaDownload.State.ERROR) {
+                        iter.remove()
+                        failed += ch.name
+                    }
+                }
+                onProgress(copied, chapters.size)
+            }
+            if (!cancelled) {
+                failed += pending.map { it.name }
+            }
+        }
+        onProgress(copied, chapters.size)
+        return MangaFolderDownloadReport(
+            totalChapters = chapters.size,
+            copiedChapters = copied,
+            failedChapters = failed,
         )
     }
 
