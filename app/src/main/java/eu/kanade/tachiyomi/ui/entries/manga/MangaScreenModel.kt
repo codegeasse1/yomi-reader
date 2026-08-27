@@ -1616,6 +1616,7 @@ class MangaScreenModel(
         onProgress(copied, chapters.size)
 
         val toDownload = chapters.filter { it.id !in copiedIds }
+        var stalled = false
         if (toDownload.isNotEmpty()) {
             downloadChapters(toDownload)
             // Enqueueing only starts a WorkManager job, which can sit ENQUEUED on
@@ -1625,7 +1626,6 @@ class MangaScreenModel(
             val deadline = System.currentTimeMillis() + DOWNLOAD_ALL_TIMEOUT_MS
             val pending = toDownload.toMutableList()
             var cancelled = false
-            var stalled = false
             var lastActivity = System.currentTimeMillis()
             while (pending.isNotEmpty() && System.currentTimeMillis() < deadline) {
                 if (shouldStop()) {
