@@ -193,6 +193,9 @@ class MangaScreen(
                 if (!downloadAllCancelled) {
                     context.toast(
                         when {
+                            !report.success && report.stalled -> context.stringResource(
+                                MR.strings.download_all_stalled,
+                            )
                             !report.success -> context.stringResource(
                                 MR.strings.download_all_failed,
                                 downloadAllFolderLabel,

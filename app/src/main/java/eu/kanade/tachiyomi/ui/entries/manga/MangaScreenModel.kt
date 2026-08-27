@@ -141,6 +141,7 @@ import uy.kohesive.injekt.api.get
 import kotlin.math.floor
 
 private const val DOWNLOAD_ALL_TIMEOUT_MS = 30 * 60 * 1000L
+private const val DOWNLOAD_ALL_STALL_MS = 90 * 1000L
 
 class MangaScreenModel(
     private val context: Context,
@@ -1617,15 +1618,22 @@ class MangaScreenModel(
         val toDownload = chapters.filter { it.id !in copiedIds }
         if (toDownload.isNotEmpty()) {
             downloadChapters(toDownload)
+            // Enqueueing only starts a WorkManager job, which can sit ENQUEUED on
+            // some devices and leave every chapter stuck in the queue. Kick the
+            // downloader directly (same path as the app's "Start downloading now").
+            downloadManager.startDownloads()
             val deadline = System.currentTimeMillis() + DOWNLOAD_ALL_TIMEOUT_MS
             val pending = toDownload.toMutableList()
             var cancelled = false
+            var stalled = false
+            var lastActivity = System.currentTimeMillis()
             while (pending.isNotEmpty() && System.currentTimeMillis() < deadline) {
                 if (shouldStop()) {
                     cancelled = true
                     break
                 }
                 delay(2_000)
+                var activity = false
                 val iter = pending.iterator()
                 while (iter.hasNext()) {
                     val ch = iter.next()
@@ -1633,10 +1641,23 @@ class MangaScreenModel(
                     if (downloadManager.isChapterDownloaded(ch.name, ch.scanlator, manga.title, manga.source)) {
                         iter.remove()
                         copyIfPossible(ch)
+                        activity = true
+                    } else if (queued?.status == MangaDownload.State.DOWNLOADING) {
+                        activity = true
                     } else if (queued?.status == MangaDownload.State.ERROR) {
                         iter.remove()
                         failed += ch.name
+                        activity = true
                     }
+                }
+                if (activity) {
+                    lastActivity = System.currentTimeMillis()
+                } else if (pending.isNotEmpty() && System.currentTimeMillis() - lastActivity > DOWNLOAD_ALL_STALL_MS) {
+                    // Nothing is downloading and nothing completed for a while: the
+                    // queue is wedged (e.g. waiting on Wi-Fi, no network). Give up
+                    // with a clear message instead of spinning until the timeout.
+                    stalled = true
+                    break
                 }
                 onProgress(copied, chapters.size)
             }
@@ -1649,6 +1670,7 @@ class MangaScreenModel(
             totalChapters = chapters.size,
             copiedChapters = copied,
             failedChapters = failed,
+            stalled = stalled,
         )
     }
 

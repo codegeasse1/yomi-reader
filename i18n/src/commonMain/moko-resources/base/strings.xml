@@ -1011,6 +1011,7 @@
     <string name="download_all_done">Downloaded %1$d chapters to %2$s</string>
     <string name="download_all_partial">Downloaded %1$d chapters to %2$s (%3$d failed)</string>
     <string name="download_all_failed">Couldn\'t download chapters to %1$s</string>
+    <string name="download_all_stalled">Downloads couldn\'t start — check your internet connection and the \"Download only on Wi-Fi\" setting, then try again</string>
     <string name="custom_cover">Custom cover</string>
     <string name="manga_cover">Cover</string>
     <string name="cover_saved">Cover saved</string>

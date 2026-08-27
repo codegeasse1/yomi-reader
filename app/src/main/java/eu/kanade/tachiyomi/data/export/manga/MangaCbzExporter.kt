@@ -36,6 +36,7 @@ data class MangaFolderDownloadReport(
     val totalChapters: Int,
     val copiedChapters: Int,
     val failedChapters: List<String> = emptyList(),
+    val stalled: Boolean = false,
 ) {
     val success: Boolean get() = copiedChapters > 0
 }
