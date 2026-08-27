@@ -9,6 +9,8 @@ import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.domain.storage.service.StorageManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.io.BufferedInputStream
+import java.util.zip.ZipInputStream
 
 /**
  * Imports manga/novel files picked with the system document picker into the
@@ -54,6 +56,9 @@ object LocalSourceImport {
 
     /**
      * Copies the picked file into `local/<Title>/` as a single-chapter series.
+     * If the file is a merged multi-chapter CBZ (a zip whose top-level entries
+     * are chapter directories), each directory is unpacked so every chapter
+     * shows up in the local source from a single import.
      * @return an error message, or `null` on success.
      */
     suspend fun importManga(context: Context, uri: Uri): String? = withIOContext {
@@ -70,6 +75,11 @@ object LocalSourceImport {
 
         val mangaDir = baseDir.createDirectory(title)
             ?: return@withIOContext "Could not create series folder"
+
+        if (isMergedDirectoryZip(context, uri)) {
+            return@withIOContext unpackMergedZip(context, uri, mangaDir)
+        }
+
         val target = mangaDir.createFile(fileName)
             ?: return@withIOContext "Could not create file in local source"
 
@@ -105,6 +115,86 @@ object LocalSourceImport {
                 }
             }
             null
+        } catch (e: Exception) {
+            e.message ?: "Import failed"
+        }
+    }
+
+    /**
+     * True when the picked zip has at least two top-level chapter directories
+     * and no bare files at its root - i.e. a merged multi-chapter CBZ produced
+     * by the "Export as CBZ" feature.
+     */
+    private fun isMergedDirectoryZip(context: Context, uri: Uri): Boolean {
+        return try {
+            val input = context.contentResolver.openInputStream(uri) ?: return false
+            input.use { stream ->
+                val zip = ZipInputStream(BufferedInputStream(stream))
+                val topLevelDirs = mutableSetOf<String>()
+                var hasBareFile = false
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    val name = entry.name
+                    if (!entry.isDirectory && name.isNotEmpty()) {
+                        val slash = name.indexOf('/')
+                        if (slash > 0) {
+                            topLevelDirs += name.substring(0, slash)
+                        } else {
+                            hasBareFile = true
+                        }
+                    }
+                    entry = zip.nextEntry
+                }
+                topLevelDirs.size >= 2 && !hasBareFile
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Unpacks a merged multi-chapter CBZ into `local/<Title>/<chapter>/<pages>`,
+     * where each top-level directory becomes one chapter in the local source.
+     */
+    private fun unpackMergedZip(context: Context, uri: Uri, mangaDir: UniFile): String? {
+        return try {
+            val input = context.contentResolver.openInputStream(uri)
+                ?: return "Could not open selected file"
+            var count = 0
+            input.use { stream ->
+                val zip = ZipInputStream(BufferedInputStream(stream))
+                val knownDirs = mutableMapOf<String, UniFile>()
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    val name = entry.name
+                    if (!entry.isDirectory && name.isNotEmpty()) {
+                        val slash = name.indexOf('/')
+                        if (slash > 0) {
+                            val chapterDirName = name.substring(0, slash)
+                            val fileName = name.substring(slash + 1)
+                            if (fileName.isNotEmpty()) {
+                                val chapterDir = knownDirs.getOrPut(chapterDirName) {
+                                    val safeName = LocalNovelBookImport.sanitizeFileName(chapterDirName)
+                                        .ifBlank { "chapter-${knownDirs.size}" }
+                                    mangaDir.createDirectory(safeName)
+                                        ?: return "Could not create chapter folder"
+                                }
+                                val target = chapterDir.createFile(
+                                    LocalNovelBookImport.sanitizeFileName(fileName),
+                                )
+                                if (target != null) {
+                                    target.openOutputStream().use { out ->
+                                        zip.copyTo(out)
+                                    }
+                                    count++
+                                }
+                            }
+                        }
+                    }
+                    entry = zip.nextEntry
+                }
+            }
+            if (count == 0) "Could not read any chapter from archive" else null
         } catch (e: Exception) {
             e.message ?: "Import failed"
         }

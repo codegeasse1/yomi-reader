@@ -1280,6 +1280,7 @@
     <string name="action_play_externally">Play externally</string>
     <string name="action_download_unread">Download unread chapters</string>
     <string name="action_download_unseen">Download unseen episodes</string>
+    <string name="download_all_anime">Download all</string>
     <string name="novel_batch_download_title">Batch download</string>
     <string name="novel_download_next_1">Download next chapter</string>
     <string name="novel_download_next_5">Download next 5 chapters</string>

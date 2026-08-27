@@ -5,6 +5,7 @@ enum class DownloadAction {
     NEXT_5_ITEMS,
     NEXT_10_ITEMS,
     NEXT_25_ITEMS,
+    ALL_ITEMS,
     UNVIEWED_ITEMS,
 }
 

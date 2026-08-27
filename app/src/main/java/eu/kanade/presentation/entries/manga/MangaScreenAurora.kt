@@ -160,6 +160,7 @@ fun MangaScreenAuroraImpl(
     onPosterLongClicked: (() -> Unit)? = onCoverClicked,
     onShareClicked: (() -> Unit)?,
     onDownloadActionClicked: ((DownloadAction) -> Unit)?,
+    onExportAsCbzClicked: (() -> Unit)? = null,
     onEditCategoryClicked: (() -> Unit)?,
     onEditFetchIntervalClicked: (() -> Unit)?,
     onEditNotesClicked: (() -> Unit)?,
@@ -1202,6 +1203,7 @@ fun MangaScreenAuroraImpl(
                             onDownloadClicked = { onDownloadActionClicked.invoke(it) },
                             isManga = true,
                             useAuroraStyle = true,
+                            onExportAsCbzClicked = onExportAsCbzClicked,
                         )
                     }
                 }

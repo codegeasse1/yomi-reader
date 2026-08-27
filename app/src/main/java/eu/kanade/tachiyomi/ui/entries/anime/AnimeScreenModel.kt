@@ -1565,11 +1565,20 @@ class AnimeScreenModel(
             DownloadAction.NEXT_10_ITEMS -> getUnseenEpisodesSorted().take(10)
             DownloadAction.NEXT_25_ITEMS -> getUnseenEpisodesSorted().take(25)
 
+            DownloadAction.ALL_ITEMS -> getUndownloadedEpisodes()
             DownloadAction.UNVIEWED_ITEMS -> getUnseenEpisodes()
         }
         if (episodesToDownload.isNotEmpty()) {
             startDownload(episodesToDownload, false)
         }
+    }
+
+    private fun getUndownloadedEpisodes(): List<Episode> {
+        return successState?.processedEpisodes
+            ?.filter { (_, dlStatus) -> dlStatus == AnimeDownload.State.NOT_DOWNLOADED }
+            ?.map { it.episode }
+            ?.toList()
+            ?: emptyList()
     }
 
     private fun cancelDownload(episodeId: Long) {

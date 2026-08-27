@@ -2,21 +2,43 @@ package eu.kanade.tachiyomi.ui.entries.manga
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -44,6 +66,9 @@ import eu.kanade.presentation.entries.manga.components.ScanlatorFilterDialog
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.Screen
 import eu.kanade.presentation.util.isTabletUi
+import eu.kanade.tachiyomi.data.export.manga.MangaCbzExportProgress
+import eu.kanade.tachiyomi.data.export.manga.MangaCbzExportResult
+import eu.kanade.tachiyomi.data.export.manga.MangaCbzExporter
 import eu.kanade.tachiyomi.source.MangaSource
 import eu.kanade.tachiyomi.source.manga.isLocalOrStub
 import eu.kanade.tachiyomi.source.online.HttpSource
@@ -62,6 +87,7 @@ import eu.kanade.tachiyomi.ui.library.manga.MangaLibraryTab
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
 import eu.kanade.tachiyomi.ui.webview.WebViewScreen
+import eu.kanade.tachiyomi.util.storage.getUriCompat
 import eu.kanade.tachiyomi.util.system.copyToClipboard
 import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
@@ -77,6 +103,7 @@ import tachiyomi.domain.entries.manga.model.MangaUpdate
 import tachiyomi.domain.items.chapter.model.Chapter
 import tachiyomi.i18n.MR
 import tachiyomi.i18n.aniyomi.AYMR
+import tachiyomi.presentation.core.components.LabeledCheckbox
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.screens.LoadingScreen
 import uy.kohesive.injekt.Injekt
@@ -123,6 +150,10 @@ class MangaScreen(
         val isHttpSource = remember { successState.source is HttpSource }
         var showNotesDialog by remember { mutableStateOf(false) }
         var showEditMetadataSheet by remember { mutableStateOf(false) }
+        var showCbzExportSheet by remember { mutableStateOf(false) }
+        var cbzExportProgress by remember { mutableStateOf<MangaCbzExportProgress?>(null) }
+        val cbzExportFailedMessage = stringResource(MR.strings.manga_export_failed)
+        val cbzExportSavedMessage = stringResource(MR.strings.manga_export_saved_to_folder)
         val showScanlatorSelector = successState.showScanlatorSelector &&
             shouldShowMangaScanlatorSelector(
                 isPreferenceEnabled = showMangaScanlatorBranches,
@@ -209,6 +240,10 @@ class MangaScreen(
             onCoverClicked = screenModel::showCoverDialog,
             onShareClicked = { shareManga(context, screenModel.manga, screenModel.source) }.takeIf { isHttpSource },
             onDownloadActionClicked = screenModel::runDownloadAction.takeIf { !successState.source.isLocalOrStub() },
+            onExportAsCbzClicked = {
+                cbzExportProgress = null
+                showCbzExportSheet = true
+            }.takeIf { !successState.source.isLocalOrStub() },
             onEditCategoryClicked = screenModel::showChangeCategoryDialog.takeIf { successState.manga.favorite },
             onEditFetchIntervalClicked = screenModel::showSetMangaFetchIntervalDialog.takeIf {
                 successState.manga.favorite
@@ -432,6 +467,47 @@ class MangaScreen(
                 },
             )
         }
+
+        if (showCbzExportSheet) {
+            MangaCbzExportSheet(
+                totalChapters = successState.chapters.size,
+                progress = cbzExportProgress,
+                onDismissRequest = {
+                    if (cbzExportProgress == null) {
+                        showCbzExportSheet = false
+                    }
+                },
+                onExportClicked = { startChapter, endChapter, destinationTreeUri ->
+                    scope.launch {
+                        cbzExportProgress = MangaCbzExportProgress.Preparing(successState.chapters.size)
+                        val result = try {
+                            screenModel.exportAsCbz(
+                                startChapter = startChapter,
+                                endChapter = endChapter,
+                                destinationTreeUri = destinationTreeUri,
+                                onProgress = { cbzExportProgress = it },
+                            )
+                        } finally {
+                            cbzExportProgress = null
+                        }
+                        when (result) {
+                            is MangaCbzExportResult.Failure -> {
+                                context.toast(cbzExportFailedMessage)
+                                return@launch
+                            }
+                            is MangaCbzExportResult.Success -> {
+                                showCbzExportSheet = false
+                                if (destinationTreeUri.isNotBlank()) {
+                                    context.toast(cbzExportSavedMessage)
+                                    return@launch
+                                }
+                                shareMangaCbz(context, result.cacheFile)
+                            }
+                        }
+                    }
+                },
+            )
+        }
     }
 
     private fun continueReading(context: Context, unreadChapter: Chapter?) {
@@ -594,4 +670,186 @@ internal fun isInkStoryBaseUrl(sourceBaseUrl: String?): Boolean {
         ?: return false
     return host.equals("inkstory.net", ignoreCase = true) ||
         host.equals("api.inkstory.net", ignoreCase = true)
+}
+
+private fun shareMangaCbz(context: Context, file: java.io.File) {
+    runCatching {
+        val uri = file.getUriCompat(context)
+        context.startActivity(uri.toShareIntent(context, type = MangaCbzExporter.CBZ_MIME_TYPE))
+    }.onFailure {
+        context.toast(it.message)
+    }
+}
+
+private data class MangaCbzRangeSelection(
+    val isValid: Boolean,
+    val startChapter: Int?,
+    val endChapter: Int?,
+)
+
+private fun resolveMangaCbzRangeSelection(
+    exportAll: Boolean,
+    startChapterText: String,
+    endChapterText: String,
+    chapterCount: Int,
+): MangaCbzRangeSelection {
+    if (exportAll) {
+        return MangaCbzRangeSelection(isValid = true, startChapter = null, endChapter = null)
+    }
+
+    val startChapter = startChapterText.toIntOrNull()?.takeIf { it > 0 }
+    val endChapter = endChapterText.toIntOrNull()?.takeIf { it > 0 }
+
+    if (startChapter == null || endChapter == null) {
+        return MangaCbzRangeSelection(isValid = false, startChapter = null, endChapter = null)
+    }
+
+    if (startChapter > chapterCount || endChapter > chapterCount || startChapter > endChapter) {
+        return MangaCbzRangeSelection(isValid = false, startChapter = null, endChapter = null)
+    }
+
+    return MangaCbzRangeSelection(isValid = true, startChapter = startChapter, endChapter = endChapter)
+}
+
+private fun resolveMangaExportTreeDisplayName(context: Context, treeUri: String): String {
+    if (treeUri.isBlank()) return ""
+    val parsed = runCatching { Uri.parse(treeUri) }.getOrNull() ?: return treeUri
+    val displayName = runCatching { DocumentFile.fromTreeUri(context, parsed)?.name }.getOrNull()
+    if (!displayName.isNullOrBlank()) return displayName
+    val segment = parsed.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+    return segment ?: treeUri
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MangaCbzExportSheet(
+    totalChapters: Int,
+    progress: MangaCbzExportProgress?,
+    onDismissRequest: () -> Unit,
+    onExportClicked: (startChapter: Int?, endChapter: Int?, destinationTreeUri: String) -> Unit,
+) {
+    val context = LocalContext.current
+    var exportAll by rememberSaveable { mutableStateOf(true) }
+    var startChapterText by rememberSaveable { mutableStateOf("") }
+    var endChapterText by rememberSaveable { mutableStateOf("") }
+    var destinationTreeUri by rememberSaveable { mutableStateOf("") }
+    val isExporting = progress != null
+    val destinationLabel = remember(destinationTreeUri) {
+        resolveMangaExportTreeDisplayName(context, destinationTreeUri)
+    }
+
+    val folderPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        if (uri != null) {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            try {
+                context.contentResolver.takePersistableUriPermission(uri, flags)
+            } catch (_: SecurityException) {
+                // Some devices do not provide persistable grants; the URI still works for this session.
+            }
+            destinationTreeUri = uri.toString()
+        }
+    }
+
+    val rangeSelection = resolveMangaCbzRangeSelection(
+        exportAll = exportAll,
+        startChapterText = startChapterText,
+        endChapterText = endChapterText,
+        chapterCount = totalChapters,
+    )
+
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = stringResource(MR.strings.manga_export_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+
+            LabeledCheckbox(
+                label = stringResource(MR.strings.manga_export_all_chapters),
+                checked = exportAll,
+                onCheckedChange = { exportAll = it },
+                enabled = !isExporting,
+            )
+
+            if (!exportAll) {
+                OutlinedTextField(
+                    value = startChapterText,
+                    onValueChange = { startChapterText = it },
+                    label = { Text(stringResource(MR.strings.manga_export_start_chapter)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isExporting,
+                )
+                OutlinedTextField(
+                    value = endChapterText,
+                    onValueChange = { endChapterText = it },
+                    label = { Text(stringResource(MR.strings.manga_export_end_chapter)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isExporting,
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (destinationLabel.isNotBlank()) {
+                        destinationLabel
+                    } else {
+                        stringResource(MR.strings.manga_export_destination_folder)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    onClick = { folderPicker.launch(null) },
+                    enabled = !isExporting,
+                ) {
+                    Text(stringResource(MR.strings.manga_export_select_folder))
+                }
+            }
+
+            if (isExporting) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text(
+                    text = when (val p = progress) {
+                        is MangaCbzExportProgress.Preparing -> "0/${p.totalChapters}"
+                        is MangaCbzExportProgress.ChapterProcessed -> "${p.current}/${p.total}"
+                        else -> ""
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            Button(
+                onClick = {
+                    onExportClicked(
+                        rangeSelection.startChapter,
+                        rangeSelection.endChapter,
+                        destinationTreeUri,
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isExporting && rangeSelection.isValid,
+            ) {
+                Text(stringResource(MR.strings.manga_export_confirm))
+            }
+        }
+    }
 }

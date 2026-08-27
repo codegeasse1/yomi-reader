@@ -47,6 +47,11 @@ import eu.kanade.presentation.util.formattedMessage
 import eu.kanade.tachiyomi.data.download.manga.MangaDownloadCache
 import eu.kanade.tachiyomi.data.download.manga.MangaDownloadManager
 import eu.kanade.tachiyomi.data.download.manga.model.MangaDownload
+import eu.kanade.tachiyomi.data.export.manga.MangaCbzExportFailure
+import eu.kanade.tachiyomi.data.export.manga.MangaCbzExportOptions
+import eu.kanade.tachiyomi.data.export.manga.MangaCbzExportProgress
+import eu.kanade.tachiyomi.data.export.manga.MangaCbzExportResult
+import eu.kanade.tachiyomi.data.export.manga.MangaCbzExporter
 import eu.kanade.tachiyomi.data.suggestions.SuggestionCoordinator
 import eu.kanade.tachiyomi.data.suggestions.SuggestionItem
 import eu.kanade.tachiyomi.data.suggestions.SuggestionSeed
@@ -146,6 +151,7 @@ class MangaScreenModel(
     private val trackChapter: TrackChapter = Injekt.get(),
     private val downloadManager: MangaDownloadManager = Injekt.get(),
     private val downloadCache: MangaDownloadCache = Injekt.get(),
+    private val mangaCbzExporter: MangaCbzExporter = MangaCbzExporter(),
     private val getMangaAndChapters: GetMangaWithChapters = Injekt.get(),
     private val getDuplicateLibraryManga: GetDuplicateLibraryManga = Injekt.get(),
     private val getAvailableScanlators: GetAvailableScanlators = Injekt.get(),
@@ -1511,11 +1517,48 @@ class MangaScreenModel(
             DownloadAction.NEXT_10_ITEMS -> getUnreadChaptersSorted().take(10)
             DownloadAction.NEXT_25_ITEMS -> getUnreadChaptersSorted().take(25)
 
+            DownloadAction.ALL_ITEMS -> getUndownloadedChapters()
             DownloadAction.UNVIEWED_ITEMS -> getUnreadChapters()
         }
         if (chaptersToDownload.isNotEmpty()) {
             startDownload(chaptersToDownload, false)
         }
+    }
+
+    private fun getUndownloadedChapters(): List<Chapter> {
+        val chapterItems = if (skipFiltered) filteredChapters.orEmpty() else allChapters.orEmpty()
+        return chapterItems
+            .filter { (_, dlStatus) -> dlStatus == MangaDownload.State.NOT_DOWNLOADED }
+            .map { it.chapter }
+    }
+
+    /**
+     * Exports downloaded chapters into a single .cbz archive so the user can back them up or
+     * move them to another device and import them all at once into the local source.
+     */
+    suspend fun exportAsCbz(
+        startChapter: Int?,
+        endChapter: Int?,
+        destinationTreeUri: String?,
+        onProgress: (MangaCbzExportProgress) -> Unit = {},
+    ): MangaCbzExportResult {
+        val state = successState ?: return MangaCbzExportResult.Failure(MangaCbzExportFailure.UNKNOWN)
+        val chapters = state.chapters.map { it.chapter }
+        if (chapters.isEmpty()) {
+            return MangaCbzExportResult.Failure(MangaCbzExportFailure.NO_CHAPTERS_SELECTED)
+        }
+        return mangaCbzExporter.exportWithResult(
+            manga = state.manga,
+            chapters = chapters,
+            source = state.source,
+            options = MangaCbzExportOptions(
+                downloadedOnly = true,
+                startChapter = startChapter,
+                endChapter = endChapter,
+                destinationTreeUri = destinationTreeUri,
+            ),
+            onProgress = onProgress,
+        )
     }
 
     private fun cancelDownload(chapterId: Long) {
