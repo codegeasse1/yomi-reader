@@ -26,6 +26,7 @@ import eu.kanade.tachiyomi.util.removeCovers
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -286,11 +287,16 @@ class BrowseMangaSourceScreenModel(
         .stateIn(screenModelScope, SharingStarted.Lazily, emptySet())
 
     /**
-     * Flow of Pager flow tied to [State.listing]
+     * Flow of Pager flow tied to [State.listing].
+     * The signal is bumped by [refresh] so the Pager can be rebuilt in place
+     * (e.g. to re-scan the local source filesystem after an import).
      */
+    private val refreshSignal = MutableStateFlow(0)
+
     private val hideInLibraryItems = sourcePreferences.hideInMangaLibraryItems().get()
     val mangaPagerFlowFlow = state.map { it.listing }
         .distinctUntilChanged()
+        .combine(refreshSignal) { listing, _ -> listing }
         .map { listing ->
             Pager(PagingConfig(pageSize = 25)) {
                 getRemoteManga.subscribe(sourceId, listing.query ?: "", listing.filters)
@@ -312,6 +318,10 @@ class BrowseMangaSourceScreenModel(
                 .cachedIn(ioCoroutineScope)
         }
         .stateIn(ioCoroutineScope, SharingStarted.Lazily, emptyFlow())
+
+    fun refresh() {
+        refreshSignal.update { it + 1 }
+    }
 
     fun getColumnsPreference(orientation: Int): GridCells {
         val isLandscape = orientation == Configuration.ORIENTATION_LANDSCAPE

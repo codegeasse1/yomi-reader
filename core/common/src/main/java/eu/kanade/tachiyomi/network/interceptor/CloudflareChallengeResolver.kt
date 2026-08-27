@@ -49,7 +49,14 @@ internal class WebViewCloudflareChallengeResolver(
      */
     @SuppressLint("SetJavaScriptEnabled")
     override fun resolve(originalRequest: Request, oldCookie: Cookie?) {
-        val headless = solveHeadless(originalRequest, oldCookie)
+        val headless = try {
+            solveHeadless(originalRequest, oldCookie)
+        } catch (t: Throwable) {
+            // The hidden solver failed in an unexpected way — never let that turn
+            // into a silent IOException that forces the user to open the WebView
+            // manually. Fall through to the visible verification screen instead.
+            HeadlessSolve()
+        }
 
         val outdated = if (!headless.bypassed) {
             headless.webview?.let(isWebViewOutdated) == true
@@ -283,7 +290,7 @@ internal val INTERACTIVE_WIDGET_PROBE = """
 """.trimIndent()
 
 // How long the hidden WebView may spend auto-solving before we escalate to the visible screen.
-private const val HEADLESS_SOLVE_TIMEOUT_MS = 20_000L
+private const val HEADLESS_SOLVE_TIMEOUT_MS = 10_000L
 
 // How often the cookie jar is polled for a freshly-landed cf_clearance.
 private const val COOKIE_POLL_INTERVAL_MS = 250L

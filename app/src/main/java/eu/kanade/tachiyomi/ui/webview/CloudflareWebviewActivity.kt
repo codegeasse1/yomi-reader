@@ -47,7 +47,18 @@ class CloudflareWebviewActivity : BaseActivity() {
     private var oldCookieValue: String? = null
     private var reported = false
 
+    private var webView: WebView? = null
+
     private val cookiePoller = Handler(Looper.getMainLooper())
+
+    // JS challenge-state polling (see pollChallengeState): detects the
+    // challenge -> real-content transition so the screen closes itself the
+    // moment verification completes, even on sites that don't set cf_clearance
+    // as a cookie the CookieManager exposes. Mirrors the Hikari verify view.
+    private var challengeSeen = false
+    private var noChallengePolls = 0
+    private var blockedCount = 0
+    private val verifyHandler = Handler(Looper.getMainLooper())
 
     init {
         registerSecureActivity(this)
@@ -72,6 +83,7 @@ class CloudflareWebviewActivity : BaseActivity() {
         } ?: HashMap()
 
         startCookiePolling()
+        startChallengeStatePolling()
         val webView = createWebView(url, headers)
 
         setComposeContent {
@@ -86,6 +98,7 @@ class CloudflareWebviewActivity : BaseActivity() {
 
     private fun createWebView(url: String, headers: Map<String, String>): WebView {
         return WebView(this).apply {
+            webView = this
             setDefaultSettings()
             headers.entries
                 .firstOrNull { it.key.equals("user-agent", ignoreCase = true) }
@@ -155,6 +168,56 @@ class CloudflareWebviewActivity : BaseActivity() {
         })
     }
 
+    /**
+     * Polls the page's own DOM every ~1.2s to tell whether it still looks like
+     * a WAF challenge. Closes the screen on the same transitions the Hikari
+     * verify view uses:
+     *  - a challenge we've seen turning into real content = verification done;
+     *  - a hard WAF block that can never mint a clearance = close after 3 ticks;
+     *  - no challenge ever appearing (page loads as ordinary content) = close
+     *    after a short grace period instead of lingering forever.
+     */
+    private fun startChallengeStatePolling() {
+        verifyHandler.post(object : Runnable {
+            override fun run() {
+                if (reported) return
+                val v = webView
+                if (v == null) {
+                    verifyHandler.postDelayed(this, CHALLENGE_POLL_INTERVAL_MS)
+                    return
+                }
+                v.evaluateJavascript(CHALLENGE_STATE_JS) { res ->
+                    when (res?.trim()?.trim('"')) {
+                        "1" -> {
+                            challengeSeen = true
+                            blockedCount = 0
+                            noChallengePolls = 0
+                        }
+                        "2" -> {
+                            blockedCount++
+                            noChallengePolls = 0
+                            if (blockedCount >= HARD_BLOCK_POLLS) {
+                                finishSolve(false)
+                                return@evaluateJavascript
+                            }
+                        }
+                        else -> if (challengeSeen) {
+                            finishSolve(true)
+                            return@evaluateJavascript
+                        } else {
+                            noChallengePolls++
+                            if (noChallengePolls >= NO_CHALLENGE_POLLS) {
+                                finishSolve(false)
+                                return@evaluateJavascript
+                            }
+                        }
+                    }
+                    if (!reported) verifyHandler.postDelayed(this, CHALLENGE_POLL_INTERVAL_MS)
+                }
+            }
+        })
+    }
+
     private fun hasFreshClearance(): Boolean {
         val url = url ?: return false
         val host = host ?: return false
@@ -170,27 +233,21 @@ class CloudflareWebviewActivity : BaseActivity() {
         }
     }
 
-    private fun reportSuccess() {
+    private fun finishSolve(success: Boolean) {
         if (reported) return
         reported = true
-        host?.let { CloudflareWebviewSolveRegistry.report(it, true) }
+        host?.let { CloudflareWebviewSolveRegistry.report(it, success) }
         finish()
     }
 
-    private fun closeManually() {
-        if (!reported) {
-            reported = true
-            host?.let { CloudflareWebviewSolveRegistry.report(it, false) }
-        }
-        finish()
-    }
+    private fun reportSuccess() = finishSolve(true)
+
+    private fun closeManually() = finishSolve(false)
 
     override fun onDestroy() {
         cookiePoller.removeCallbacksAndMessages(null)
-        if (!reported) {
-            reported = true
-            host?.let { CloudflareWebviewSolveRegistry.report(it, false) }
-        }
+        verifyHandler.removeCallbacksAndMessages(null)
+        finishSolve(false)
         super.onDestroy()
     }
 
@@ -200,6 +257,31 @@ class CloudflareWebviewActivity : BaseActivity() {
         private const val HEADERS_KEY = "headers_key"
         private const val OLD_COOKIE_KEY = "old_cookie_key"
         private const val COOKIE_POLL_INTERVAL_MS = 500L
+
+        // JS poll cadence + close thresholds (matches the Hikari verify view).
+        private const val CHALLENGE_POLL_INTERVAL_MS = 1_200L
+        private const val HARD_BLOCK_POLLS = 3
+        private const val NO_CHALLENGE_POLLS = 12
+
+        /** Returns whether the page still looks like a WAF challenge:
+         *  1 = challenge present, 2 = hard block, 0 = neither (real content). */
+        private val CHALLENGE_STATE_JS = """
+            (function(){
+              var t=(document.title||'').toLowerCase();
+              var h=location.href.toLowerCase();
+              var b=document.body?document.body.innerText.slice(0,3000).toLowerCase():'';
+              var chal=(t.indexOf('just a moment')>=0||t.indexOf('attention required')>=0||
+              h.indexOf('cdn-cgi/challenge')>=0||h.indexOf('challenge-platform')>=0||
+              b.indexOf('verify you are human')>=0||b.indexOf('performing security verification')>=0||
+              b.indexOf('checking your browser')>=0||b.indexOf('cf-chl')>=0||
+              b.indexOf('turnstile')>=0);
+              var block=(t.indexOf('you have been blocked')>=0||t.indexOf('access denied')>=0||
+              h.indexOf('cf-error')>=0||b.indexOf('you have been blocked')>=0||
+              b.indexOf('access denied')>=0||b.indexOf('request blocked')>=0||
+              b.indexOf('cf-error-details')>=0);
+              return chal?1:(block?2:0);
+            })();
+        """.trimIndent()
 
         fun newIntent(
             context: Context,

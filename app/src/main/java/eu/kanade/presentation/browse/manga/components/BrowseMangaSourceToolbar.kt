@@ -3,6 +3,7 @@ package eu.kanade.presentation.browse.manga.components
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.ViewModule
+import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
@@ -37,6 +38,7 @@ fun BrowseMangaSourceToolbar(
     navigateUp: () -> Unit,
     onWebViewClick: () -> Unit,
     onHelpClick: () -> Unit,
+    onImportFromDeviceClick: (() -> Unit)? = null,
     onSettingsClick: () -> Unit,
     onSearch: (String) -> Unit,
     useAuroraAppBarActions: Boolean = true,
@@ -81,6 +83,15 @@ fun BrowseMangaSourceToolbar(
                         )
                     }
                     if (isLocalSource) {
+                        if (onImportFromDeviceClick != null) {
+                            add(
+                                AppBar.Action(
+                                    title = stringResource(MR.strings.action_import_from_device),
+                                    icon = Icons.Outlined.FileDownload,
+                                    onClick = onImportFromDeviceClick,
+                                ),
+                            )
+                        }
                         add(
                             AppBar.OverflowAction(
                                 title = stringResource(MR.strings.label_help),

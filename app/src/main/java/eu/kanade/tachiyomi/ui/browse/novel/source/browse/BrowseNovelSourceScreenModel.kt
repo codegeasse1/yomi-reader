@@ -347,6 +347,12 @@ class BrowseNovelSourceScreenModel(
 
     private val autoFavoriteLocalNovels = sourcePreferences.importEpubAddToLibrary().get()
 
+    /**
+     * Bumped by [refresh] so the Pager can be rebuilt in place (e.g. to re-scan
+     * the local source filesystem after an import).
+     */
+    private val refreshSignal = MutableStateFlow(0)
+
     val favoriteNovelUrls = resolveGetNovelFavorites()?.subscribe(sourceId)
         ?.map { list -> list.map { it.url }.toSet() }
         ?.stateIn(screenModelScope, SharingStarted.Lazily, emptySet())
@@ -367,6 +373,7 @@ class BrowseNovelSourceScreenModel(
                 old.isSearch == new.isSearch &&
                 old.filterVersion == new.filterVersion
         }
+        .combine(refreshSignal) { request, _ -> request }
         .map { request ->
             Pager(PagingConfig(pageSize = 25)) {
                 getRemoteNovel.subscribe(sourceId, request.query, request.filters)
@@ -388,6 +395,10 @@ class BrowseNovelSourceScreenModel(
                 .cachedIn(ioCoroutineScope)
         }
         .stateIn(ioCoroutineScope, SharingStarted.Lazily, emptyFlow())
+
+    fun refresh() {
+        refreshSignal.update { it + 1 }
+    }
 
     fun resetFilters() {
         if (source !is NovelCatalogueSource) return

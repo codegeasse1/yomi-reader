@@ -3,6 +3,7 @@ package eu.kanade.presentation.browse.novel.components
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.ViewModule
+import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Text
@@ -25,6 +26,7 @@ import kotlinx.collections.immutable.persistentListOf
 import tachiyomi.domain.library.model.LibraryDisplayMode
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.source.local.entries.novel.LocalNovelSource
 
 @Composable
 fun BrowseNovelSourceToolbar(
@@ -36,12 +38,14 @@ fun BrowseNovelSourceToolbar(
     navigateUp: () -> Unit,
     onWebViewClick: (() -> Unit)?,
     onSettingsClick: (() -> Unit)?,
+    onImportFromDeviceClick: (() -> Unit)? = null,
     onSearch: (String) -> Unit,
     useAuroraAppBarActions: Boolean = true,
     scrollBehavior: TopAppBarScrollBehavior? = null,
 ) {
     val title = source?.name
     val hasSourceSettings = onSettingsClick != null
+    val isLocalSource = source is LocalNovelSource
     var selectingDisplayMode by remember { mutableStateOf(false) }
     val isAurora = LocalIsAuroraTheme.current
 
@@ -81,6 +85,15 @@ fun BrowseNovelSourceToolbar(
                                 title = stringResource(MR.strings.action_settings),
                                 icon = Icons.Outlined.Settings,
                                 onClick = onSettingsClick,
+                            ),
+                        )
+                    }
+                    if (isLocalSource && onImportFromDeviceClick != null) {
+                        add(
+                            AppBar.Action(
+                                title = stringResource(MR.strings.action_import_from_device),
+                                icon = Icons.Outlined.FileDownload,
+                                onClick = onImportFromDeviceClick,
                             ),
                         )
                     }

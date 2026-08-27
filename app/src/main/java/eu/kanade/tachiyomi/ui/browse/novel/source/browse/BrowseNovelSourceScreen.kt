@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.ui.browse.novel.source.browse
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -32,6 +34,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cafe.adriel.voyager.core.model.rememberScreenModel
@@ -52,6 +55,7 @@ import eu.kanade.tachiyomi.novelsource.model.NovelFilterList
 import eu.kanade.tachiyomi.source.novel.NovelSiteSource
 import eu.kanade.tachiyomi.ui.browse.TitleCarouselScreen
 import eu.kanade.tachiyomi.ui.browse.TitleCarouselType
+import eu.kanade.tachiyomi.ui.browse.import.LocalSourceImport
 import eu.kanade.tachiyomi.ui.browse.novel.extension.details.NovelSourcePreferencesScreen
 import eu.kanade.tachiyomi.ui.browse.novel.migration.search.MigrateNovelDialog
 import eu.kanade.tachiyomi.ui.browse.novel.migration.search.MigrateNovelDialogScreenModel
@@ -98,6 +102,24 @@ data class BrowseNovelSourceScreen(
         val snackbarHostState = remember { SnackbarHostState() }
         val scope = rememberCoroutineScope()
         val haptic = LocalHapticFeedback.current
+        val context = LocalContext.current
+        val importSuccessText = stringResource(MR.strings.manga_added_library)
+        val importFailedText = stringResource(MR.strings.action_import_from_device_failed)
+        val importLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.OpenDocument(),
+        ) { uri ->
+            if (uri != null) {
+                scope.launch {
+                    val error = LocalSourceImport.importNovel(context, uri)
+                    if (error == null) {
+                        snackbarHostState.showSnackbar(importSuccessText)
+                        screenModel.refresh()
+                    } else {
+                        snackbarHostState.showSnackbar("$importFailedText: $error")
+                    }
+                }
+            }
+        }
 
         LaunchedEffect(Unit) {
             queryEvent.receiveAsFlow()
@@ -154,6 +176,9 @@ data class BrowseNovelSourceScreen(
                             isSourceConfigurable = state.isSourceConfigurable,
                         )?.let { screen ->
                             { navigator.push(screen) }
+                        },
+                        onImportFromDeviceClick = {
+                            importLauncher.launch(LocalSourceImport.NOVEL_IMPORT_MIME_TYPES)
                         },
                         onSearch = screenModel::search,
                         useAuroraAppBarActions = false,

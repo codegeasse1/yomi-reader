@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.ui.browse.manga.source.browse
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -56,6 +59,7 @@ import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.browse.TitleCarouselScreen
 import eu.kanade.tachiyomi.ui.browse.TitleCarouselType
+import eu.kanade.tachiyomi.ui.browse.import.LocalSourceImport
 import eu.kanade.tachiyomi.ui.browse.manga.extension.details.MangaSourcePreferencesScreen
 import eu.kanade.tachiyomi.ui.browse.manga.migration.search.MigrateMangaDialog
 import eu.kanade.tachiyomi.ui.browse.manga.migration.search.MigrateMangaDialogScreenModel
@@ -134,6 +138,25 @@ data class BrowseMangaSourceScreen(
         val uriHandler = LocalUriHandler.current
         val snackbarHostState = remember { SnackbarHostState() }
 
+        val context = LocalContext.current
+        val importSuccessText = stringResource(MR.strings.manga_added_library)
+        val importFailedText = stringResource(MR.strings.action_import_from_device_failed)
+        val importLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.OpenDocument(),
+        ) { uri ->
+            if (uri != null) {
+                scope.launch {
+                    val error = LocalSourceImport.importManga(context, uri)
+                    if (error == null) {
+                        snackbarHostState.showSnackbar(importSuccessText)
+                        screenModel.refresh()
+                    } else {
+                        snackbarHostState.showSnackbar("$importFailedText: $error")
+                    }
+                }
+            }
+        }
+
         val onHelpClick = { uriHandler.openUri(LocalMangaSource.HELP_URL) }
         val onWebViewClick = f@{
             val source = screenModel.source as? HttpSource ?: return@f
@@ -167,6 +190,9 @@ data class BrowseMangaSourceScreen(
                         navigateUp = navigator::pop,
                         onWebViewClick = onWebViewClick,
                         onHelpClick = onHelpClick,
+                        onImportFromDeviceClick = {
+                            importLauncher.launch(LocalSourceImport.MANGA_IMPORT_MIME_TYPES)
+                        },
                         onSettingsClick = {
                             navigator.push(MangaSourcePreferencesScreen(sourceId))
                         },
