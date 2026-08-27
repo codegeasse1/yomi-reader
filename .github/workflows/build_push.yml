@@ -103,10 +103,20 @@ jobs:
           cat > /tmp/release-notes.md <<'EOF'
           ## What's new
 
-          **☁️ Reliable Cloudflare handling — no more stuck loading**
-          When a source is behind a Cloudflare check, the app now shows a verification screen that closes automatically the moment you're verified. No more waiting forever or re-tapping to load pages.
+          **☁️ Cloudflare solved in the background**
+          Challenges are now solved automatically in a hidden WebView while you use the app. If one can't be solved on its own, a verification page opens automatically and closes itself the moment you're verified — no more stuck loading or re-tapping to load pages.
 
-          *(Still included from previous updates: faster chapter loading, auto-retry for failed images, and faster thumbnails.)*
+          **📂 Import manga & novels from your device**
+          The Local sources can now import files straight from your phone: CBZ/CBR/ZIP/PDF/EPUB for manga (a merged multi-chapter CBZ unpacks into all its chapters in one import), and EPUB/FB2/Markdown/HTML/TXT for novels.
+
+          **📥 Download all chapters + CBZ export**
+          - Download all: downloads every chapter and saves a copy into any folder you pick, with a live progress sheet and a clear message if downloads can't start.
+          - CBZ export: merges any range of downloaded chapters into a single CBZ file for sharing or importing elsewhere.
+
+          **🔔 Update dialog on launch**
+          When a newer version is available, you'll be told about it right as the app opens.
+
+          *(Still included from previous updates: fast chapter loading, auto-retry for failed images, and faster thumbnails.)*
 
           ## Download
           - **app-arm64-v8a-release.apk** — for most phones (64-bit)
