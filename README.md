@@ -3,6 +3,9 @@
   <h1>Yomi</h1>
   <p><strong>An open-source anime, manga, and novel reader for Android.</strong></p>
   <p>
+    <a href="https://github.com/codegeasse1/yomi-reader/releases/latest"><img src="https://img.shields.io/badge/Download-Latest_Release-8b5cf6?style=for-the-badge" alt="Download latest release"></a>
+  </p>
+  <p>
     <a href="LICENSE"><img src="https://img.shields.io/github/license/codegeasse1/yomi-reader" alt="License"></a>
     <a href="https://developer.android.com/about/versions/oreo"><img src="https://img.shields.io/badge/Android-8.0%2B-brightgreen" alt="Android 8+"></a>
   </p>
@@ -26,7 +29,7 @@ Yomi is a free, open-source media reader for Android that brings anime, manga, a
 Requires Android 8.0+ (API 26+). Package name: `com.yomi.reader`.
 
 - **Test builds (`build` branch):** every commit pushed to the `build` branch is compiled automatically by GitHub Actions. Open the **Actions** tab, pick the latest **CI** run, and download the `yomi-debug-<sha>` artifact. Debug APKs are signed with the debug key and install directly (package `com.yomi.reader.localdev`).
-- **Releases:** published to GitHub Releases when available.
+- **Releases:** [Download the latest release](https://github.com/codegeasse1/yomi-reader/releases/latest) — signed `app-universal-release.apk` (works on any device) and `app-arm64-v8a-release.apk`, ready to install.
 
 ## Features
 
@@ -41,6 +44,18 @@ Requires Android 8.0+ (API 26+). Package name: `com.yomi.reader`.
 | Library | Unified library, categories, updates, history, and download queue |
 | Backup & restore | Full backup/restore across all media types |
 | Customization | Themes and color schemes, reader/player behavior, Aurora-style display settings |
+
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/home-manga.jpg" alt="Home - Manga tab" width="30%" />
+  <img src="screenshots/home-novel.jpg" alt="Home - Novel tab" width="30%" />
+  <img src="screenshots/browse-extensions.jpg" alt="Browse - Manga extensions" width="30%" />
+</p>
+<p align="center">
+  <img src="screenshots/library-comics.jpg" alt="Popular comics grid" width="30%" />
+  <img src="screenshots/title-detail.jpg" alt="Title detail page" width="30%" />
+</p>
 
 ## Build From Source
 
