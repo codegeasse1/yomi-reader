@@ -49,13 +49,16 @@ internal class WebViewCloudflareChallengeResolver(
      */
     @SuppressLint("SetJavaScriptEnabled")
     override fun resolve(originalRequest: Request, oldCookie: Cookie?) {
-        val headless = solveHeadless(originalRequest, oldCookie)
-
-        val outdated = if (!headless.bypassed) {
-            headless.webview?.let(isWebViewOutdated) == true
-        } else {
-            false
+        val headless = try {
+            solveHeadless(originalRequest, oldCookie)
+        } catch (t: Throwable) {
+            // The hidden solver failed in an unexpected way — never let that turn
+            // into a silent IOException that forces the user to open the WebView
+            // manually. Fall through to the visible verification screen instead.
+            HeadlessSolve()
         }
+
+        val outdated = !headless.bypassed && headless.outdated
 
         destroyWebView(headless.webview)
 
@@ -79,6 +82,8 @@ internal class WebViewCloudflareChallengeResolver(
 
         @Volatile var interactive = false
 
+        @Volatile var outdated = false
+
         @Volatile var webview: WebView? = null
     }
 
@@ -94,6 +99,10 @@ internal class WebViewCloudflareChallengeResolver(
         mainExecutor.execute {
             val createdWebView = createWebView(originalRequest)
             result.webview = createdWebView
+            // Must run on the main thread: isOutdated() reads WebView.settings, and touching
+            // a WebView from the OkHttp background thread throws "A WebView method was called
+            // on thread '...'" and killed the whole request before the visible screen opened.
+            result.outdated = runCatching { isWebViewOutdated(createdWebView) }.getOrDefault(false)
 
             createdWebView.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String) {
