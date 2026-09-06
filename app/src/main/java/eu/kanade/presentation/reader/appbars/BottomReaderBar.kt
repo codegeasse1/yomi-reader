@@ -149,7 +149,11 @@ fun BottomReaderBar(
                             }) {
                                 Icon(
                                     painter = painterResource(
-                                        if (enhanceEnabled) R.drawable.ic_image_enhance_24dp else R.drawable.ic_image_enhance_off_24dp,
+                                        if (enhanceEnabled) {
+                                            R.drawable.ic_image_enhance_24dp
+                                        } else {
+                                            R.drawable.ic_image_enhance_off_24dp
+                                        },
                                     ),
                                     contentDescription = stringResource(MR.strings.image_enhance),
                                 )
