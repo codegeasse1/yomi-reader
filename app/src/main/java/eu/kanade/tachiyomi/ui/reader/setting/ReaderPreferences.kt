@@ -45,10 +45,12 @@ class ReaderPreferences(
 
     fun showBottomBarSettings() = preferenceStore.getBoolean("pref_bottom_bar_settings", true)
 
-    // ponytail: comma-separated string is simpler than JSON serialization for 5 items
+    fun showBottomBarImageEnhance() = preferenceStore.getBoolean("pref_bottom_bar_image_enhance", true)
+
+    // ponytail: comma-separated string is simpler than JSON serialization for 6 items
     fun bottomBarButtonsOrder() = preferenceStore.getString(
         "pref_bottom_bar_buttons_order",
-        "reading_mode,orientation,crop_borders,chapter_list,settings",
+        "reading_mode,orientation,crop_borders,chapter_list,image_enhance,settings",
     )
 
     // endregion
@@ -234,6 +236,8 @@ class ReaderPreferences(
     fun denoise() = preferenceStore.getInt("pref_denoise", 0)
 
     fun binarization() = preferenceStore.getInt("pref_binarization", 0)
+
+    fun imageEnhance() = preferenceStore.getBoolean("pref_image_enhance", false)
 
     fun dualPageSplitWebtoon() = preferenceStore.getBoolean("pref_dual_page_split_webtoon", false)
 

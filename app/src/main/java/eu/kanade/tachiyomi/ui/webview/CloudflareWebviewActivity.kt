@@ -13,13 +13,28 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
@@ -29,6 +44,7 @@ import eu.kanade.tachiyomi.ui.base.activity.BaseActivity
 import eu.kanade.tachiyomi.util.system.setDefaultSettings
 import eu.kanade.tachiyomi.util.view.setComposeContent
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.coroutines.delay
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
@@ -92,8 +108,15 @@ class CloudflareWebviewActivity : BaseActivity() {
                 url = url,
                 onClose = ::closeManually,
                 onReload = { webView.loadUrl(url, headers) },
+                onCancelAll = ::cancelAllPending,
             )
         }
+    }
+
+    /** Stops the whole verification queue: current screen + every host still waiting. */
+    private fun cancelAllPending() {
+        CloudflareWebviewSolveRegistry.cancelAll()
+        finish()
     }
 
     private fun createWebView(url: String, headers: Map<String, String>): WebView {
@@ -315,8 +338,16 @@ private fun CloudflareWebviewScreen(
     url: String,
     onClose: () -> Unit,
     onReload: () -> Unit,
+    onCancelAll: () -> Unit,
 ) {
     BackHandler(onBack = onClose)
+    var pendingCount by remember { mutableStateOf(CloudflareWebviewSolveRegistry.pendingCount()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_000L)
+            pendingCount = CloudflareWebviewSolveRegistry.pendingCount()
+        }
+    }
     Scaffold(
         topBar = {
             AppBar(
@@ -332,17 +363,40 @@ private fun CloudflareWebviewScreen(
                                 icon = Icons.Outlined.Refresh,
                                 onClick = onReload,
                             ),
+                            AppBar.Action(
+                                title = stringResource(MR.strings.action_cloudflare_cancel_all),
+                                icon = Icons.Outlined.Cancel,
+                                onClick = onCancelAll,
+                            ),
                         ),
                     )
                 },
             )
         },
     ) { contentPadding ->
-        AndroidView(
-            factory = { webView },
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(contentPadding),
-        )
+        ) {
+            if (pendingCount > 0) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0x22FF9800))
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Text(
+                        text = stringResource(MR.strings.cloudflare_queue_waiting, pendingCount),
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+            AndroidView(
+                factory = { webView },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }

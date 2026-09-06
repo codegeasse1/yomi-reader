@@ -147,6 +147,7 @@ fun MangaScreenAuroraImpl(
     onWebViewLongClicked: (() -> Unit)?,
     onTrackingClicked: (() -> Unit)?,
     onTagSearch: (String) -> Unit,
+    onTagGlobalSearch: (String) -> Unit,
     onFilterButtonClicked: () -> Unit,
     showScanlatorSelector: Boolean,
     scanlatorChapterCounts: Map<String, Int>,
@@ -156,6 +157,8 @@ fun MangaScreenAuroraImpl(
     onContinueReading: () -> Unit,
     onSearch: (query: String, global: Boolean) -> Unit,
     onSuggestionClick: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit,
+    onSuggestionSearch: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit = {},
+    onSuggestionGlobalSearch: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit = {},
     onCoverClicked: () -> Unit,
     onPosterLongClicked: (() -> Unit)? = onCoverClicked,
     onShareClicked: (() -> Unit)?,
@@ -535,6 +538,7 @@ fun MangaScreenAuroraImpl(
                                     manga = manga,
                                     translation = auroraEntryTranslation,
                                     onTagSearch = onTagSearch,
+                                    onTagGlobalSearch = onTagGlobalSearch,
                                     descriptionExpanded = descriptionExpanded,
                                     genresExpanded = genresExpanded,
                                     onToggleDescription = {
@@ -574,6 +578,8 @@ fun MangaScreenAuroraImpl(
                                         eu.kanade.presentation.entries.components.aurora.AuroraSuggestionsRow(
                                             state = state.suggestions,
                                             onSuggestionClick = onSuggestionClick,
+                                            onSuggestionSearch = onSuggestionSearch,
+                                            onSuggestionGlobalSearch = onSuggestionGlobalSearch,
                                             onOpenSuggestions = onOpenSuggestions,
                                             onRetryClick = onRetrySuggestions,
                                             modifier = Modifier.fillMaxWidth(),
@@ -847,6 +853,7 @@ fun MangaScreenAuroraImpl(
                                     manga = manga,
                                     translation = auroraEntryTranslation,
                                     onTagSearch = onTagSearch,
+                                    onTagGlobalSearch = onTagGlobalSearch,
                                     descriptionExpanded = descriptionExpanded,
                                     genresExpanded = genresExpanded,
                                     onToggleDescription = { descriptionExpanded = !descriptionExpanded },
@@ -888,6 +895,8 @@ fun MangaScreenAuroraImpl(
                                     eu.kanade.presentation.entries.components.aurora.AuroraSuggestionsRow(
                                         state = state.suggestions,
                                         onSuggestionClick = onSuggestionClick,
+                                        onSuggestionSearch = onSuggestionSearch,
+                                        onSuggestionGlobalSearch = onSuggestionGlobalSearch,
                                         onOpenSuggestions = onOpenSuggestions,
                                         onRetryClick = onRetrySuggestions,
                                         modifier = Modifier

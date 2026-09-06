@@ -124,6 +124,7 @@ fun MangaScreen(
 
     // For tags menu
     onTagSearch: (String) -> Unit,
+    onTagGlobalSearch: (String) -> Unit,
     onGenreClick: ((String) -> Unit)? = null,
     onGenreLongClick: ((String) -> Unit)? = null,
     onGenresSearch: ((List<String>) -> Unit)? = null,
@@ -137,6 +138,8 @@ fun MangaScreen(
     onContinueReading: () -> Unit,
     onSearch: (query: String, global: Boolean) -> Unit,
     onSuggestionClick: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit,
+    onSuggestionSearch: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit = {},
+    onSuggestionGlobalSearch: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit = {},
 
     // For cover dialog
     onCoverClicked: () -> Unit,
@@ -203,6 +206,7 @@ fun MangaScreen(
             onWebViewLongClicked = onWebViewLongClicked,
             onTrackingClicked = onTrackingClicked,
             onTagSearch = onTagSearch,
+            onTagGlobalSearch = onTagGlobalSearch,
             onGenreClick = onGenreClick,
             onGenreLongClick = onGenreLongClick,
             onGenresSearch = onGenresSearch,
@@ -215,6 +219,8 @@ fun MangaScreen(
             onContinueReading = onContinueReading,
             onSearch = onSearch,
             onSuggestionClick = onSuggestionClick,
+            onSuggestionSearch = onSuggestionSearch,
+            onSuggestionGlobalSearch = onSuggestionGlobalSearch,
             onCoverClicked = onCoverClicked,
             onShareClicked = onShareClicked,
             onDownloadActionClicked = onDownloadActionClicked,
@@ -265,6 +271,7 @@ fun MangaScreen(
             onWebViewLongClicked = onWebViewLongClicked,
             onTrackingClicked = onTrackingClicked,
             onTagSearch = onTagSearch,
+            onTagGlobalSearch = onTagGlobalSearch,
             onCopyTagToClipboard = onCopyTagToClipboard,
             onFilterClicked = onFilterButtonClicked,
             showScanlatorSelector = showScanlatorSelector,
@@ -311,6 +318,7 @@ fun MangaScreen(
             onWebViewLongClicked = onWebViewLongClicked,
             onTrackingClicked = onTrackingClicked,
             onTagSearch = onTagSearch,
+            onTagGlobalSearch = onTagGlobalSearch,
             onCopyTagToClipboard = onCopyTagToClipboard,
             onFilterButtonClicked = onFilterButtonClicked,
             showScanlatorSelector = showScanlatorSelector,
@@ -342,6 +350,8 @@ fun MangaScreen(
             autoJumpToNextLabel = autoJumpToNextLabel,
             onToggleAutoJumpToNext = onToggleAutoJumpToNext,
             onSuggestionClick = onSuggestionClick,
+            onSuggestionSearch = onSuggestionSearch,
+            onSuggestionGlobalSearch = onSuggestionGlobalSearch,
             onRetrySuggestions = onRetrySuggestions,
             onOpenSuggestions = onOpenSuggestions,
         )
@@ -365,6 +375,7 @@ private fun MangaScreenSmallImpl(
 
     // For tags menu
     onTagSearch: (String) -> Unit,
+    onTagGlobalSearch: (String) -> Unit,
     onCopyTagToClipboard: (tag: String) -> Unit,
 
     onFilterClicked: () -> Unit,
@@ -619,6 +630,7 @@ private fun MangaScreenSmallImpl(
                             description = state.manga.displayDescription,
                             tagsProvider = { state.manga.displayGenre },
                             onTagSearch = onTagSearch,
+                            onTagGlobalSearch = onTagGlobalSearch,
                             onCopyTagToClipboard = onCopyTagToClipboard,
                         )
                     }
@@ -695,6 +707,7 @@ fun MangaScreenLargeImpl(
 
     // For tags menu
     onTagSearch: (String) -> Unit,
+    onTagGlobalSearch: (String) -> Unit,
     onCopyTagToClipboard: (tag: String) -> Unit,
 
     onFilterButtonClicked: () -> Unit,
@@ -738,6 +751,8 @@ fun MangaScreenLargeImpl(
     onInvertSelection: () -> Unit,
 
     onSuggestionClick: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit,
+    onSuggestionSearch: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit,
+    onSuggestionGlobalSearch: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit,
     onRetrySuggestions: () -> Unit,
     onOpenSuggestions: () -> Unit,
 ) {
@@ -912,6 +927,7 @@ fun MangaScreenLargeImpl(
                             description = state.manga.displayDescription,
                             tagsProvider = { state.manga.displayGenre },
                             onTagSearch = onTagSearch,
+                            onTagGlobalSearch = onTagGlobalSearch,
                             onCopyTagToClipboard = onCopyTagToClipboard,
                         )
                         if (entrySuggestionsEnabled) {
@@ -920,6 +936,8 @@ fun MangaScreenLargeImpl(
                                 eu.kanade.presentation.entries.components.aurora.AuroraSuggestionsRow(
                                     state = state.suggestions,
                                     onSuggestionClick = onSuggestionClick,
+                                    onSuggestionSearch = onSuggestionSearch,
+                                    onSuggestionGlobalSearch = onSuggestionGlobalSearch,
                                     onOpenSuggestions = onOpenSuggestions,
                                     onRetryClick = onRetrySuggestions,
                                     modifier = Modifier.fillMaxWidth(),

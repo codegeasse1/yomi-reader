@@ -150,6 +150,8 @@ fun NovelScreenAuroraImpl(
     onRefresh: () -> Unit,
     onSearch: (query: String, global: Boolean) -> Unit,
     onSuggestionClick: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit,
+    onSuggestionSearch: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit = {},
+    onSuggestionGlobalSearch: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit = {},
     onPosterLongClicked: (() -> Unit)? = null,
     onShare: (() -> Unit)?,
     onWebView: (() -> Unit)?,
@@ -569,6 +571,8 @@ fun NovelScreenAuroraImpl(
                                         eu.kanade.presentation.entries.components.aurora.AuroraSuggestionsRow(
                                             state = state.suggestions,
                                             onSuggestionClick = onSuggestionClick,
+                                            onSuggestionSearch = onSuggestionSearch,
+                                            onSuggestionGlobalSearch = onSuggestionGlobalSearch,
                                             onOpenSuggestions = onOpenSuggestions,
                                             onRetryClick = onRetrySuggestions,
                                             modifier = Modifier.fillMaxWidth(),
@@ -1379,6 +1383,8 @@ fun NovelScreenAuroraImpl(
                                 eu.kanade.presentation.entries.components.aurora.AuroraSuggestionsRow(
                                     state = state.suggestions,
                                     onSuggestionClick = onSuggestionClick,
+                                    onSuggestionSearch = onSuggestionSearch,
+                                    onSuggestionGlobalSearch = onSuggestionGlobalSearch,
                                     onOpenSuggestions = onOpenSuggestions,
                                     onRetryClick = onRetrySuggestions,
                                     modifier = Modifier

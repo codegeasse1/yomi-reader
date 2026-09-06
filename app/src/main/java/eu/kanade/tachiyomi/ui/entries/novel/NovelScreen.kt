@@ -441,6 +441,12 @@ class NovelScreen(
                     navigator.push(item.toDirectEntryScreenOrNull() ?: item.toGlobalSearchScreen())
                 }
             },
+            onSuggestionSearch = { item ->
+                coroutineScope.launch { performGenreSearch(navigator, item.searchQuery, successState.source) }
+            },
+            onSuggestionGlobalSearch = { item ->
+                coroutineScope.launch { performSearch(navigator, item.searchQuery, true) }
+            },
             onPosterLongClicked = screenModel::showCoverDialog,
             onToggleAllChaptersRead = screenModel::toggleAllChaptersRead,
             onShare = if (canOpenNovelWebView) {

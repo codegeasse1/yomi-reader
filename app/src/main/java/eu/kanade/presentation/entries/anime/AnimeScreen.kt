@@ -179,6 +179,8 @@ fun AnimeScreen(
     onContinueWatching: () -> Unit,
     onSearch: (query: String, global: Boolean) -> Unit,
     onSuggestionClick: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit,
+    onSuggestionSearch: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit = {},
+    onSuggestionGlobalSearch: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit = {},
 
     // For cover dialog
     onCoverClicked: () -> Unit,
@@ -270,6 +272,8 @@ fun AnimeScreen(
             onContinueWatching = onContinueWatching,
             onSearch = onSearch,
             onSuggestionClick = onSuggestionClick,
+            onSuggestionSearch = onSuggestionSearch,
+            onSuggestionGlobalSearch = onSuggestionGlobalSearch,
             onCoverClicked = onCoverClicked,
             onShareClicked = onShareClicked,
             onDownloadActionClicked = onDownloadActionClicked,
@@ -406,6 +410,8 @@ fun AnimeScreen(
             onToggleAutoJumpToNext = onToggleAutoJumpToNext,
             onClickEditInfo = onClickEditInfo,
             onSuggestionClick = onSuggestionClick,
+            onSuggestionSearch = onSuggestionSearch,
+            onSuggestionGlobalSearch = onSuggestionGlobalSearch,
             onRetrySuggestions = onRetrySuggestions,
             onOpenSuggestions = onOpenSuggestions,
         )
@@ -942,6 +948,8 @@ fun AnimeScreenLargeImpl(
     selectedDubbing: String?,
 
     onSuggestionClick: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit,
+    onSuggestionSearch: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit,
+    onSuggestionGlobalSearch: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit,
     onRetrySuggestions: () -> Unit,
     onOpenSuggestions: () -> Unit,
 ) {
@@ -1174,6 +1182,8 @@ fun AnimeScreenLargeImpl(
                                     eu.kanade.presentation.entries.components.aurora.AuroraSuggestionsRow(
                                         state = state.suggestions,
                                         onSuggestionClick = onSuggestionClick,
+                                        onSuggestionSearch = onSuggestionSearch,
+                                        onSuggestionGlobalSearch = onSuggestionGlobalSearch,
                                         onOpenSuggestions = onOpenSuggestions,
                                         onRetryClick = onRetrySuggestions,
                                         modifier = Modifier.fillMaxWidth(),

@@ -103,20 +103,19 @@ jobs:
           cat > /tmp/release-notes.md <<'EOF'
           ## What's new
 
-          **☁️ Cloudflare solved in the background**
-          Challenges are now solved automatically in a hidden WebView while you use the app. If one can't be solved on its own, a verification page opens automatically and closes itself the moment you're verified — no more stuck loading or re-tapping to load pages.
+          **🖼️ Image enhancer in the reader**
+          Tap the new image-enhancer button in the reader's bottom bar — right next to the settings gear — to sharpen page images instantly with an on-device GPU filter (no lag). Tap it again to switch it off.
 
-          **📂 Import manga & novels from your device**
-          The Local sources can now import files straight from your phone: CBZ/CBR/ZIP/PDF/EPUB for manga (a merged multi-chapter CBZ unpacks into all its chapters in one import), and EPUB/FB2/Markdown/HTML/TXT for novels.
+          **🔍 Tag search & global search**
+          Tap any genre/tag chip on a manga page for options: **Search** finds other titles with that tag in the same extension, **Global search** searches all your installed extensions, and **Copy** copies the tag to your clipboard.
 
-          **📥 Download all chapters + CBZ export**
-          - Download all: downloads every chapter and saves a copy into any folder you pick, with a live progress sheet and a clear message if downloads can't start.
-          - CBZ export: merges any range of downloaded chapters into a single CBZ file for sharing or importing elsewhere.
+          **✨ Similar titles — search them too**
+          Each card in "Similar Titles" now has a **⋮** button: **Search** looks up that title in the current extension, **Global search** looks it up across all installed extensions.
 
-          **🔔 Update dialog on launch**
-          When a newer version is available, you'll be told about it right as the app opens.
+          **☁️ Smarter Cloudflare verification**
+          Verification pages now open **one at a time** instead of stacking when several sites need verifying at once (e.g. during a global search). Each closes itself the moment you're verified, then the next one opens. You can skip a site or **Cancel all** from the verification screen, and sites you've already verified are remembered so they don't pop up again for a while.
 
-          *(Still included from previous updates: fast chapter loading, auto-retry for failed images, and faster thumbnails.)*
+          *(Still included from previous updates: fast chapter loading, auto-retry for failed images, faster thumbnails, CBZ export, update dialog on launch.)*
 
           ## Download
           - **app-arm64-v8a-release.apk** — for most phones (64-bit)

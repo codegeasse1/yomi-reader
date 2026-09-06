@@ -137,6 +137,8 @@ fun NovelScreen(
     onRefresh: () -> Unit,
     onSearch: (query: String, global: Boolean) -> Unit,
     onSuggestionClick: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit,
+    onSuggestionSearch: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit = {},
+    onSuggestionGlobalSearch: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit = {},
     onGenreClick: ((String) -> Unit)? = null,
     onGenreLongClick: ((String) -> Unit)? = null,
     onGenresSearch: ((List<String>) -> Unit)? = null,
@@ -227,6 +229,8 @@ fun NovelScreen(
             onRefresh = onRefresh,
             onSearch = onSearch,
             onSuggestionClick = onSuggestionClick,
+            onSuggestionSearch = onSuggestionSearch,
+            onSuggestionGlobalSearch = onSuggestionGlobalSearch,
             onGenreClick = onGenreClick,
             onGenreLongClick = onGenreLongClick,
             onGenresSearch = onGenresSearch,
@@ -885,6 +889,8 @@ fun NovelScreen(
                             eu.kanade.presentation.entries.components.aurora.AuroraSuggestionsRow(
                                 state = state.suggestions,
                                 onSuggestionClick = onSuggestionClick,
+                                onSuggestionSearch = onSuggestionSearch,
+                                onSuggestionGlobalSearch = onSuggestionGlobalSearch,
                                 onOpenSuggestions = onOpenSuggestions,
                                 onRetryClick = onRetrySuggestions,
                                 modifier = Modifier

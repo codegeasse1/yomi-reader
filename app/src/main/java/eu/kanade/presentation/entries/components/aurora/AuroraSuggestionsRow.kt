@@ -22,9 +22,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,6 +65,8 @@ private val CardShape = RoundedCornerShape(12.dp)
 fun AuroraSuggestionsRow(
     state: SuggestionState,
     onSuggestionClick: (SuggestionItem) -> Unit,
+    onSuggestionSearch: (SuggestionItem) -> Unit = {},
+    onSuggestionGlobalSearch: (SuggestionItem) -> Unit = {},
     onOpenSuggestions: () -> Unit,
     onRetryClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -123,6 +130,8 @@ fun AuroraSuggestionsRow(
                 is SuggestionState.Success -> AuroraSuggestionsContent(
                     items = state.items,
                     onSuggestionClick = onSuggestionClick,
+                    onSuggestionSearch = onSuggestionSearch,
+                    onSuggestionGlobalSearch = onSuggestionGlobalSearch,
                 )
                 is SuggestionState.Empty -> {
                     Box(
@@ -175,6 +184,8 @@ fun AuroraSuggestionsRow(
 private fun AuroraSuggestionsContent(
     items: List<SuggestionItem>,
     onSuggestionClick: (SuggestionItem) -> Unit,
+    onSuggestionSearch: (SuggestionItem) -> Unit,
+    onSuggestionGlobalSearch: (SuggestionItem) -> Unit,
 ) {
     val listState = rememberLazyListState()
     LazyRow(
@@ -192,6 +203,8 @@ private fun AuroraSuggestionsContent(
                 item = item,
                 visible = visible,
                 onClick = { onSuggestionClick(item) },
+                onSearch = { onSuggestionSearch(item) },
+                onGlobalSearch = { onSuggestionGlobalSearch(item) },
             )
         }
     }
@@ -202,12 +215,15 @@ private fun AuroraSuggestionCard(
     item: SuggestionItem,
     visible: Boolean,
     onClick: () -> Unit,
+    onSearch: () -> Unit,
+    onGlobalSearch: () -> Unit,
 ) {
     val alpha by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
         animationSpec = tween(durationMillis = 300),
         label = "card_alpha",
     )
+    var menuOpen by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
             .width(CardWidth)
@@ -243,6 +259,43 @@ private fun AuroraSuggestionCard(
                 .align(Alignment.BottomStart)
                 .padding(horizontal = 6.dp, vertical = 5.dp),
         )
+        // Overflow button: search the title in this source or in all installed sources.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(4.dp)
+                .size(22.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable { menuOpen = true },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.MoreVert,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+        DropdownMenu(
+            expanded = menuOpen,
+            onDismissRequest = { menuOpen = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text(text = stringResource(MR.strings.action_search)) },
+                onClick = {
+                    menuOpen = false
+                    onSearch()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(text = stringResource(MR.strings.action_global_search)) },
+                onClick = {
+                    menuOpen = false
+                    onGlobalSearch()
+                },
+            )
+        }
     }
 }
 

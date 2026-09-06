@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.network.interceptor
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
 import android.webkit.CookieManager
@@ -63,6 +64,14 @@ internal class WebViewCloudflareChallengeResolver(
         destroyWebView(headless.webview)
 
         if (headless.bypassed) return
+
+        // Already verified this host recently (its clearance simply hasn't landed for this
+        // request yet): don't open the visible screen again — fail quietly instead so a global
+        // search over many Cloudflare-gated sources doesn't pop a verification page for hosts
+        // the user has already cleared. They can still verify manually via the source's WebView.
+        if (isHostVerifiedRecently(originalRequest.url.host)) {
+            throw CloudflareBypassException()
+        }
 
         if (solveVisibleChallenge(originalRequest, oldCookie)) return
 
@@ -190,46 +199,47 @@ internal class WebViewCloudflareChallengeResolver(
     /**
      * Hands the challenge to the visible Cloudflare verification screen. The screen reports
      * back (success/failure) through [CloudflareWebviewSolveRegistry]; this call blocks until
-     * it does, the user finishes the captcha, or a timeout elapses.
+     * it does, the user finishes the captcha, or a timeout elapses. Solves are queued globally
+     * (one visible screen at a time), so a global search across many challenged sources shows
+     * the verification pages one after another instead of stacking them.
      */
     private fun solveVisibleChallenge(originalRequest: Request, oldCookie: Cookie?): Boolean {
         val launcher = CloudflareWebviewLauncherHolder.launcher ?: return false
         val host = originalRequest.url.host
 
-        // If a visible solve for this host is already pending (a parallel request coalesced
-        // here), reuse it instead of stacking another screen on top of the first.
-        val wasPending = CloudflareWebviewSolveRegistry.isPending(host)
-        val future = CloudflareWebviewSolveRegistry.register(host)
-
-        if (!wasPending) {
-            val headers = parseHeaders(originalRequest.headers)
-            try {
-                mainExecutor.execute {
-                    try {
-                        launcher.launch(
-                            url = originalRequest.url.toString(),
-                            headers = headers,
-                            host = host,
-                            oldCookie = oldCookie?.value,
-                        )
-                    } catch (_: Throwable) {
-                        CloudflareWebviewSolveRegistry.report(host, false)
-                    }
-                }
-            } catch (_: Throwable) {
-                CloudflareWebviewSolveRegistry.report(host, false)
-            }
-        }
+        val headers = parseHeaders(originalRequest.headers)
+        val future = CloudflareWebviewSolveRegistry.registerSolve(
+            host = host,
+            params = VisibleSolveParams(
+                url = originalRequest.url.toString(),
+                headers = headers,
+                oldCookie = oldCookie?.value,
+            ),
+        )
 
         return try {
             val solved = future.get(VISIBLE_SOLVE_TIMEOUT_MINUTES, TimeUnit.MINUTES)
-            // Even if the screen reported failure (e.g. the user closed it at the exact moment
-            // the solve landed), a fresh clearance in the jar means the challenge actually passed.
-            solved || hasNewCloudflareClearance(originalRequest, originalRequest.url.toString(), oldCookie)
+            val hasClearance = solved ||
+                hasNewCloudflareClearance(originalRequest, originalRequest.url.toString(), oldCookie)
+            if (hasClearance) markHostVerified(host)
+            hasClearance
         } catch (_: Exception) {
-            CloudflareWebviewSolveRegistry.report(host, false)
+            // Timeout: the waiting network thread gives up, but the visible screen still owns
+            // its queue slot until the user actually dismisses it, so don't advance the queue.
             hasNewCloudflareClearance(originalRequest, originalRequest.url.toString(), oldCookie)
         }
+    }
+
+    private fun verifiedHostsPrefs(): SharedPreferences =
+        context.getSharedPreferences(VERIFIED_HOSTS_PREFS, Context.MODE_PRIVATE)
+
+    private fun isHostVerifiedRecently(host: String): Boolean {
+        val lastVerified = verifiedHostsPrefs().getLong(host, 0L)
+        return lastVerified > 0L && System.currentTimeMillis() - lastVerified < VERIFIED_HOST_WINDOW_MS
+    }
+
+    private fun markHostVerified(host: String) {
+        verifiedHostsPrefs().edit().putLong(host, System.currentTimeMillis()).apply()
     }
 
     private fun destroyWebView(webview: WebView?) {
@@ -303,6 +313,13 @@ private const val MAX_WIDGET_PROBES = 8
 
 // How long the visible verification screen may stay open for a human to solve a captcha.
 private const val VISIBLE_SOLVE_TIMEOUT_MINUTES = 5L
+
+// SharedPreferences store + window for the "verified recently" cache: after a host is verified
+// successfully we remember it so the visible screen isn't popped again for the same host within
+// this window (e.g. another global search), avoiding verification-page spam for hosts the user
+// has already cleared.
+private const val VERIFIED_HOSTS_PREFS = "cloudflare_verified_hosts"
+private const val VERIFIED_HOST_WINDOW_MS = 2L * 60L * 60L * 1000L
 
 internal open class CloudflareBypassException : Exception()
 internal class CloudflareInteractiveChallengeException : CloudflareBypassException()

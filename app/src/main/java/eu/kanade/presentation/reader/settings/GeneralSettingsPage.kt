@@ -161,7 +161,7 @@ internal fun ColumnScope.GeneralPage(screenModel: ReaderSettingsScreenModel) {
     val bottomBarButtonsOrder by screenModel.preferences.bottomBarButtonsOrder().collectAsState()
 
     val defaultOrder = remember {
-        listOf("reading_mode", "orientation", "crop_borders", "chapter_list", "settings")
+        listOf("reading_mode", "orientation", "crop_borders", "chapter_list", "image_enhance", "settings")
     }
 
     val orderListState = remember(bottomBarButtonsOrder) {
@@ -200,6 +200,7 @@ internal fun ColumnScope.GeneralPage(screenModel: ReaderSettingsScreenModel) {
                         "orientation" -> stringResource(MR.strings.pref_bottom_bar_show_orientation)
                         "crop_borders" -> stringResource(MR.strings.pref_bottom_bar_show_crop_borders)
                         "chapter_list" -> stringResource(MR.strings.pref_bottom_bar_show_chapter_list)
+                        "image_enhance" -> stringResource(MR.strings.pref_bottom_bar_show_image_enhance)
                         "settings" -> stringResource(MR.strings.pref_bottom_bar_show_settings)
                         else -> ""
                     }
@@ -208,6 +209,7 @@ internal fun ColumnScope.GeneralPage(screenModel: ReaderSettingsScreenModel) {
                         "orientation" -> screenModel.preferences.showBottomBarOrientation()
                         "crop_borders" -> screenModel.preferences.showBottomBarCropBorders()
                         "chapter_list" -> screenModel.preferences.showBottomBarChapterList()
+                        "image_enhance" -> screenModel.preferences.showBottomBarImageEnhance()
                         "settings" -> screenModel.preferences.showBottomBarSettings()
                         else -> null
                     }

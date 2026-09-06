@@ -37,9 +37,9 @@ android {
 
     defaultConfig {
         applicationId = "com.yomi.reader"
-        versionCode = 7
+        versionCode = 8
 
-        versionName = "0.1.6"
+        versionName = "0.1.7"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getGitSha()}\"")

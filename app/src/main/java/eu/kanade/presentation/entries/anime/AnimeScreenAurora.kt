@@ -173,6 +173,8 @@ fun AnimeScreenAuroraImpl(
     onContinueWatching: () -> Unit,
     onSearch: (query: String, global: Boolean) -> Unit,
     onSuggestionClick: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit,
+    onSuggestionSearch: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit = {},
+    onSuggestionGlobalSearch: (eu.kanade.tachiyomi.data.suggestions.SuggestionItem) -> Unit = {},
     onCoverClicked: () -> Unit,
     onPosterLongClicked: (() -> Unit)? = onCoverClicked,
     onShareClicked: (() -> Unit)?,
@@ -769,6 +771,8 @@ fun AnimeScreenAuroraImpl(
                                         eu.kanade.presentation.entries.components.aurora.AuroraSuggestionsRow(
                                             state = state.suggestions,
                                             onSuggestionClick = onSuggestionClick,
+                                            onSuggestionSearch = onSuggestionSearch,
+                                            onSuggestionGlobalSearch = onSuggestionGlobalSearch,
                                             onOpenSuggestions = onOpenSuggestions,
                                             onRetryClick = onRetrySuggestions,
                                             modifier = Modifier.fillMaxWidth(),
@@ -1186,6 +1190,8 @@ fun AnimeScreenAuroraImpl(
                                     eu.kanade.presentation.entries.components.aurora.AuroraSuggestionsRow(
                                         state = state.suggestions,
                                         onSuggestionClick = onSuggestionClick,
+                                        onSuggestionSearch = onSuggestionSearch,
+                                        onSuggestionGlobalSearch = onSuggestionGlobalSearch,
                                         onOpenSuggestions = onOpenSuggestions,
                                         onRetryClick = onRetrySuggestions,
                                         modifier = Modifier

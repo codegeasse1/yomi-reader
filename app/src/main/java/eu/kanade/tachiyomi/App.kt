@@ -183,7 +183,9 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
             // Interactive Cloudflare challenges (Turnstile captchas) that the hidden WebView
             // can't auto-solve are handed to a visible verification screen that opens
-            // automatically and closes itself once a fresh cf_clearance is set.
+            // automatically and closes itself once a fresh cf_clearance is set. Screens are
+            // serialized globally (one at a time, queued) — see CloudflareWebviewSolveRegistry.
+            CloudflareWebviewSolveRegistry.mainExecutor = ContextCompat.getMainExecutor(this)
             CloudflareWebviewLauncherHolder.launcher = CloudflareWebviewLauncher { url, headers, host, oldCookie ->
                 val launched = try {
                     startActivity(CloudflareWebviewActivity.newIntent(this, url, headers, host, oldCookie))

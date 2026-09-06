@@ -276,6 +276,7 @@ class MangaScreen(
                 }
             },
             onTagSearch = { scope.launch { performGenreSearch(navigator, it, screenModel.source!!) } },
+            onTagGlobalSearch = { scope.launch { performSearch(navigator, it, true) } },
             onGenreClick = { genre -> scope.launch { performGenreSearch(navigator, genre, screenModel.source!!) } },
             onGenreLongClick = null, // handled internally in AuroraImpl as state toggle
             onGenresSearch = { genres ->
@@ -299,6 +300,12 @@ class MangaScreen(
                 scope.launch {
                     navigator.push(item.toDirectEntryScreenOrNull() ?: item.toGlobalSearchScreen())
                 }
+            },
+            onSuggestionSearch = { item ->
+                scope.launch { performGenreSearch(navigator, item.searchQuery, screenModel.source!!) }
+            },
+            onSuggestionGlobalSearch = { item ->
+                scope.launch { performSearch(navigator, item.searchQuery, true) }
             },
             onCoverClicked = screenModel::showCoverDialog,
             onShareClicked = { shareManga(context, screenModel.manga, screenModel.source) }.takeIf { isHttpSource },
