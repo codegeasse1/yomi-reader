@@ -40,6 +40,7 @@ object CloudflareWebviewSolveRegistry {
     private val pendingByHost = HashMap<String, CompletableFuture<Boolean>>()
     private val paramsByHost = HashMap<String, VisibleSolveParams>()
     private val queuedHosts = ArrayDeque<String>()
+
     @Volatile
     private var activeHost: String? = null
 
