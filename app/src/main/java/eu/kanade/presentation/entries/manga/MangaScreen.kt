@@ -124,6 +124,7 @@ fun MangaScreen(
 
     // For tags menu
     onTagSearch: (String) -> Unit,
+    onTagGlobalSearch: (String) -> Unit,
     onGenreClick: ((String) -> Unit)? = null,
     onGenreLongClick: ((String) -> Unit)? = null,
     onGenresSearch: ((List<String>) -> Unit)? = null,
@@ -203,6 +204,7 @@ fun MangaScreen(
             onWebViewLongClicked = onWebViewLongClicked,
             onTrackingClicked = onTrackingClicked,
             onTagSearch = onTagSearch,
+            onTagGlobalSearch = onTagGlobalSearch,
             onGenreClick = onGenreClick,
             onGenreLongClick = onGenreLongClick,
             onGenresSearch = onGenresSearch,
@@ -265,6 +267,7 @@ fun MangaScreen(
             onWebViewLongClicked = onWebViewLongClicked,
             onTrackingClicked = onTrackingClicked,
             onTagSearch = onTagSearch,
+            onTagGlobalSearch = onTagGlobalSearch,
             onCopyTagToClipboard = onCopyTagToClipboard,
             onFilterClicked = onFilterButtonClicked,
             showScanlatorSelector = showScanlatorSelector,
@@ -311,6 +314,7 @@ fun MangaScreen(
             onWebViewLongClicked = onWebViewLongClicked,
             onTrackingClicked = onTrackingClicked,
             onTagSearch = onTagSearch,
+            onTagGlobalSearch = onTagGlobalSearch,
             onCopyTagToClipboard = onCopyTagToClipboard,
             onFilterButtonClicked = onFilterButtonClicked,
             showScanlatorSelector = showScanlatorSelector,
@@ -365,6 +369,7 @@ private fun MangaScreenSmallImpl(
 
     // For tags menu
     onTagSearch: (String) -> Unit,
+    onTagGlobalSearch: (String) -> Unit,
     onCopyTagToClipboard: (tag: String) -> Unit,
 
     onFilterClicked: () -> Unit,
@@ -619,6 +624,7 @@ private fun MangaScreenSmallImpl(
                             description = state.manga.displayDescription,
                             tagsProvider = { state.manga.displayGenre },
                             onTagSearch = onTagSearch,
+                            onTagGlobalSearch = onTagGlobalSearch,
                             onCopyTagToClipboard = onCopyTagToClipboard,
                         )
                     }
@@ -695,6 +701,7 @@ fun MangaScreenLargeImpl(
 
     // For tags menu
     onTagSearch: (String) -> Unit,
+    onTagGlobalSearch: (String) -> Unit,
     onCopyTagToClipboard: (tag: String) -> Unit,
 
     onFilterButtonClicked: () -> Unit,
@@ -912,6 +919,7 @@ fun MangaScreenLargeImpl(
                             description = state.manga.displayDescription,
                             tagsProvider = { state.manga.displayGenre },
                             onTagSearch = onTagSearch,
+                            onTagGlobalSearch = onTagGlobalSearch,
                             onCopyTagToClipboard = onCopyTagToClipboard,
                         )
                         if (entrySuggestionsEnabled) {

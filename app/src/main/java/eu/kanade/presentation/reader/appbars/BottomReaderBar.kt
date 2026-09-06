@@ -32,10 +32,11 @@ data class BottomBarButtonFlags(
     val orientation: Boolean = true,
     val cropBorders: Boolean = true,
     val chapterList: Boolean = true,
+    val imageEnhance: Boolean = true,
     val settings: Boolean = true,
 ) {
     fun hasAnyVisible(): Boolean =
-        readingMode || orientation || cropBorders || chapterList || settings
+        readingMode || orientation || cropBorders || chapterList || imageEnhance || settings
 }
 
 @Composable
@@ -47,6 +48,8 @@ fun BottomReaderBar(
     onClickOrientation: () -> Unit,
     cropEnabled: Boolean,
     onClickCropBorder: () -> Unit,
+    enhanceEnabled: Boolean,
+    onClickImageEnhance: () -> Unit,
     onClickChapterList: () -> Unit,
     onClickSettings: () -> Unit,
     visibleButtons: BottomBarButtonFlags = BottomBarButtonFlags(),
@@ -55,11 +58,17 @@ fun BottomReaderBar(
     val appHaptics = LocalAppHaptics.current
 
     val defaultOrder = remember {
-        listOf("reading_mode", "orientation", "crop_borders", "chapter_list", "settings")
+        listOf("reading_mode", "orientation", "crop_borders", "chapter_list", "image_enhance", "settings")
     }
     val order = remember(buttonsOrder) {
         val list = buttonsOrder.filter { it in defaultOrder }.toMutableList()
         defaultOrder.forEach { if (it !in list) list.add(it) }
+        val settingsIndex = list.indexOf("settings")
+        if (settingsIndex > 0) {
+            list.remove("image_enhance")
+            val settingsNow = list.indexOf("settings")
+            list.add(settingsNow, "image_enhance")
+        }
         list
     }
 
@@ -128,6 +137,21 @@ fun BottomReaderBar(
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.ViewList,
                                     contentDescription = stringResource(MR.strings.chapters),
+                                )
+                            }
+                        }
+                    }
+                    "image_enhance" -> {
+                        if (visibleButtons.imageEnhance) {
+                            IconButton(onClick = {
+                                appHaptics.tap()
+                                onClickImageEnhance()
+                            }) {
+                                Icon(
+                                    painter = painterResource(
+                                        if (enhanceEnabled) R.drawable.ic_image_enhance_24dp else R.drawable.ic_image_enhance_off_24dp,
+                                    ),
+                                    contentDescription = stringResource(MR.strings.image_enhance),
                                 )
                             }
                         }

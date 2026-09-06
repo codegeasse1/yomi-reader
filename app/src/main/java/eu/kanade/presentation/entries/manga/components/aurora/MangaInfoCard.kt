@@ -16,6 +16,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,6 +41,7 @@ import eu.kanade.presentation.entries.components.auroraDescriptionBlockStyle
 import eu.kanade.presentation.entries.translation.AuroraEntryTranslationState
 import eu.kanade.presentation.theme.AuroraTheme
 import tachiyomi.domain.entries.manga.model.Manga
+import tachiyomi.i18n.MR
 import tachiyomi.i18n.aniyomi.AYMR
 import tachiyomi.presentation.core.i18n.stringResource
 
@@ -48,6 +51,7 @@ fun MangaInfoCard(
     manga: Manga,
     translation: AuroraEntryTranslationState? = null,
     onTagSearch: (String) -> Unit,
+    onTagGlobalSearch: (String) -> Unit,
     descriptionExpanded: Boolean,
     genresExpanded: Boolean,
     onToggleDescription: () -> Unit,
@@ -137,6 +141,7 @@ fun MangaInfoCard(
                                     3,
                                 )
                             }
+                            var menuGenre by remember { mutableStateOf<String?>(null) }
                             genresToShow.forEach { genre ->
                                 val isSelected = genre in selectedGenres
                                 Box(
@@ -157,7 +162,7 @@ fun MangaInfoCard(
                                                     if (selectedGenres.isNotEmpty()) {
                                                         onGenreLongClick?.invoke(genre)
                                                     } else {
-                                                        onTagSearch(genre)
+                                                        menuGenre = genre
                                                     }
                                                 },
                                                 onLongPress = {
@@ -174,6 +179,25 @@ fun MangaInfoCard(
                                         color = if (isSelected) colors.accent else colors.accent,
                                         fontWeight = FontWeight.Medium,
                                     )
+                                    DropdownMenu(
+                                        expanded = menuGenre == genre,
+                                        onDismissRequest = { menuGenre = null },
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text(text = stringResource(MR.strings.action_search)) },
+                                            onClick = {
+                                                menuGenre = null
+                                                onTagSearch(genre)
+                                            },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text(text = stringResource(MR.strings.action_global_search)) },
+                                            onClick = {
+                                                menuGenre = null
+                                                onTagGlobalSearch(genre)
+                                            },
+                                        )
+                                    }
                                 }
                             }
 

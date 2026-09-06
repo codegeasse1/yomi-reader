@@ -147,6 +147,7 @@ fun MangaScreenAuroraImpl(
     onWebViewLongClicked: (() -> Unit)?,
     onTrackingClicked: (() -> Unit)?,
     onTagSearch: (String) -> Unit,
+    onTagGlobalSearch: (String) -> Unit,
     onFilterButtonClicked: () -> Unit,
     showScanlatorSelector: Boolean,
     scanlatorChapterCounts: Map<String, Int>,
@@ -535,6 +536,7 @@ fun MangaScreenAuroraImpl(
                                     manga = manga,
                                     translation = auroraEntryTranslation,
                                     onTagSearch = onTagSearch,
+                                    onTagGlobalSearch = onTagGlobalSearch,
                                     descriptionExpanded = descriptionExpanded,
                                     genresExpanded = genresExpanded,
                                     onToggleDescription = {
@@ -847,6 +849,7 @@ fun MangaScreenAuroraImpl(
                                     manga = manga,
                                     translation = auroraEntryTranslation,
                                     onTagSearch = onTagSearch,
+                                    onTagGlobalSearch = onTagGlobalSearch,
                                     descriptionExpanded = descriptionExpanded,
                                     genresExpanded = genresExpanded,
                                     onToggleDescription = { descriptionExpanded = !descriptionExpanded },

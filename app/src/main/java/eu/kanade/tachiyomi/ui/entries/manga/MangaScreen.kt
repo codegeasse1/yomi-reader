@@ -276,6 +276,7 @@ class MangaScreen(
                 }
             },
             onTagSearch = { scope.launch { performGenreSearch(navigator, it, screenModel.source!!) } },
+            onTagGlobalSearch = { scope.launch { performSearch(navigator, it, true) } },
             onGenreClick = { genre -> scope.launch { performGenreSearch(navigator, genre, screenModel.source!!) } },
             onGenreLongClick = null, // handled internally in AuroraImpl as state toggle
             onGenresSearch = { genres ->

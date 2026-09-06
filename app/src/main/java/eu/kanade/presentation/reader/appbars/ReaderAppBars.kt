@@ -116,6 +116,8 @@ fun ReaderAppBars(
     onClickOrientation: () -> Unit,
     cropEnabled: Boolean,
     onClickCropBorder: () -> Unit,
+    enhanceEnabled: Boolean,
+    onClickImageEnhance: () -> Unit,
     onClickChapterList: () -> Unit,
     onClickSettings: () -> Unit,
 
@@ -365,6 +367,8 @@ fun ReaderAppBars(
                         onClickOrientation = onClickOrientation,
                         cropEnabled = cropEnabled,
                         onClickCropBorder = onClickCropBorder,
+                        enhanceEnabled = enhanceEnabled,
+                        onClickImageEnhance = onClickImageEnhance,
                         onClickChapterList = onClickChapterList,
                         onClickSettings = onClickSettings,
                         visibleButtons = visibleButtons,

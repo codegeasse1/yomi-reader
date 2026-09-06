@@ -554,6 +554,7 @@
     <string name="pref_always_decode_long_strip_with_ssiv_summary">Affects performance. Only enable if reducing bitmap threshold doesn\'t fix blank image issues</string>
     <string name="pref_display_profile">Custom display profile</string>
     <string name="pref_crop_borders">Crop borders</string>
+    <string name="image_enhance">Image enhancer</string>
     <string name="pref_custom_brightness">Custom brightness</string>
     <string name="pref_grayscale">Grayscale</string>
     <string name="pref_inverted_colors">Inverted</string>
@@ -699,6 +700,7 @@
     <string name="pref_bottom_bar_show_orientation">Rotation</string>
     <string name="pref_bottom_bar_show_crop_borders">Crop borders</string>
     <string name="pref_bottom_bar_show_chapter_list">Chapter list</string>
+    <string name="pref_bottom_bar_show_image_enhance">Image enhancer</string>
     <string name="pref_bottom_bar_show_settings">Settings</string>
 
       <!-- Downloads section -->

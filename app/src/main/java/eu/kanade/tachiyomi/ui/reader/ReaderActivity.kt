@@ -487,6 +487,7 @@ class ReaderActivity : BaseActivity() {
                     val cropBorderWebtoon by readerPreferences.cropBordersWebtoon().collectAsStateWithLifecycle()
                     val isPagerType = ReadingMode.isPagerType(viewModel.getMangaReadingMode())
                     val cropEnabled = if (isPagerType) cropBorderPaged else cropBorderWebtoon
+                    val imageEnhanceEnabled by readerPreferences.imageEnhance().collectAsStateWithLifecycle()
 
                     // Navigator customization preferences
                     val showNavigator by readerPreferences.showNavigator().collectAsStateWithLifecycle()
@@ -523,6 +524,9 @@ class ReaderActivity : BaseActivity() {
                         .collectAsStateWithLifecycle()
                     val showBottomBarSettings by readerPreferences
                         .showBottomBarSettings()
+                        .collectAsStateWithLifecycle()
+                    val showBottomBarImageEnhance by readerPreferences
+                        .showBottomBarImageEnhance()
                         .collectAsStateWithLifecycle()
                     val bottomBarButtonsOrder by readerPreferences
                         .bottomBarButtonsOrder()
@@ -612,6 +616,12 @@ class ReaderActivity : BaseActivity() {
                             menuToggleToast?.cancel()
                             menuToggleToast = toast(if (enabled) MR.strings.on else MR.strings.off)
                         },
+                        enhanceEnabled = imageEnhanceEnabled,
+                        onClickImageEnhance = {
+                            val enabled = viewModel.toggleImageEnhance()
+                            menuToggleToast?.cancel()
+                            menuToggleToast = toast(if (enabled) MR.strings.on else MR.strings.off)
+                        },
                         onClickChapterList = viewModel::openChapterListDialog,
                         onClickSettings = viewModel::openSettingsDialog,
 
@@ -634,6 +644,7 @@ class ReaderActivity : BaseActivity() {
                             orientation = showBottomBarOrientation,
                             cropBorders = showBottomBarCropBorders,
                             chapterList = showBottomBarChapterList,
+                            imageEnhance = showBottomBarImageEnhance,
                             settings = showBottomBarSettings,
                         ),
                         buttonsOrder = buttonsOrderList,
@@ -1233,6 +1244,12 @@ class ReaderActivity : BaseActivity() {
                 }
                 .launchIn(lifecycleScope)
 
+            readerPreferences.imageEnhance().changes()
+                .onEach {
+                    applyRenderEffects()
+                }
+                .launchIn(lifecycleScope)
+
             readerPreferences.cutoutShort().changes()
                 .onEach(::setCutoutShort)
                 .launchIn(lifecycleScope)
@@ -1362,13 +1379,31 @@ class ReaderActivity : BaseActivity() {
                 val sharpeningVal = readerPreferences.sharpening().get() / 100f
                 val denoiseVal = readerPreferences.denoise().get() / 100f
                 val binarizationVal = readerPreferences.binarization().get() / 100f
+                val imageEnhance = readerPreferences.imageEnhance().get()
 
                 var effect: android.graphics.RenderEffect? = null
+
+                if (imageEnhance) {
+                    val enhanceShader = android.graphics.RuntimeShader(ENHANCE_SHADER)
+                    enhanceShader.setFloatUniform("amount", 1.0f)
+                    effect = android.graphics.RenderEffect.createRuntimeShaderEffect(
+                        enhanceShader,
+                        "inputShader",
+                    )
+                }
 
                 if (sharpeningVal > 0f) {
                     val sharpShader = android.graphics.RuntimeShader(SHARPEN_SHADER)
                     sharpShader.setFloatUniform("sharpness", sharpeningVal)
-                    effect = android.graphics.RenderEffect.createRuntimeShaderEffect(sharpShader, "inputShader")
+                    val sharpEffect = android.graphics.RenderEffect.createRuntimeShaderEffect(
+                        sharpShader,
+                        "inputShader",
+                    )
+                    effect = if (effect != null) {
+                        android.graphics.RenderEffect.createChainEffect(sharpEffect, effect)
+                    } else {
+                        sharpEffect
+                    }
                 }
 
                 if (denoiseVal > 0f) {
@@ -1762,6 +1797,30 @@ private const val SHARPEN_SHADER = """
 
         half4 sharp = center * 5.0 - (left + right + top + bottom);
         return center + (sharp - center) * sharpness;
+    }
+"""
+
+private const val ENHANCE_SHADER = """
+    uniform shader inputShader;
+    uniform float amount;
+
+    half4 main(float2 coords) {
+        half4 center = inputShader.eval(coords);
+
+        half4 left = inputShader.eval(coords + float2(-1.0, 0.0));
+        half4 right = inputShader.eval(coords + float2(1.0, 0.0));
+        half4 top = inputShader.eval(coords + float2(0.0, -1.0));
+        half4 bottom = inputShader.eval(coords + float2(0.0, 1.0));
+
+        half4 sharp = center * 5.0 - (left + right + top + bottom);
+        half4 result = center + (sharp - center) * 0.65 * amount;
+
+        result.rgb = (result.rgb - 0.5) * (1.0 + 0.18 * amount) + 0.5;
+
+        float luma = dot(result.rgb, half3(0.299, 0.587, 0.114));
+        result.rgb = mix(half3(luma), result.rgb, 1.0 + 0.22 * amount);
+
+        return half4(result.rgb, center.a);
     }
 """
 

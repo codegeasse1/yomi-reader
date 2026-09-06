@@ -1216,6 +1216,8 @@ class ReaderViewModel @JvmOverloads constructor(
         }
     }
 
+    fun toggleImageEnhance(): Boolean = readerPreferences.imageEnhance().toggle()
+
     /**
      * Generate a filename for the given [manga] and [page]
      */
